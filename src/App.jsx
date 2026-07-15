@@ -2,6 +2,7 @@ import { useState } from "react";
 import { ConnectButton } from "@rainbow-me/rainbowkit";
 import { LenderTab } from "./components/LenderTab.jsx";
 import { BorrowerTab } from "./components/BorrowerTab.jsx";
+import { OperatorTab } from "./components/OperatorTab.jsx";
 
 export default function App() {
   const [tab, setTab] = useState("borrower");
@@ -34,10 +35,15 @@ export default function App() {
           <TabButton active={tab === "borrower"} onClick={() => setTab("borrower")}>
             Borrower
           </TabButton>
+          <TabButton active={tab === "operator"} onClick={() => setTab("operator")}>
+            Operator
+          </TabButton>
         </nav>
 
         <main style={{ paddingBottom: 40 }}>
-          {tab === "lender" ? <LenderTab /> : <BorrowerTab />}
+          {tab === "lender" && <LenderTab />}
+          {tab === "borrower" && <BorrowerTab />}
+          {tab === "operator" && <OperatorTab />}
         </main>
       </div>
     </div>

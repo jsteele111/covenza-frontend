@@ -1,3 +1,4 @@
+﻿Set-Content -Path .gitignore -Encoding utf8 -Value @"
 node_modules
 dist
 dist-ssr
@@ -14,3 +15,11 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# Local Netlify folder
+.netlify
+test-wallet-*.json
+
+# Netlify CLI's Deno lockfile (Edge Functions tooling, auto-generated)
+deno.lock
+"@

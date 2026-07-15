@@ -1,17 +1,20 @@
-import { useReadContract } from "wagmi";
+import { useChainId, useReadContract } from "wagmi";
 import { parseAbi } from "viem";
 import { VAULT_FACTORY_ABI } from "../config/abis.js";
-import { CONTRACTS } from "../config/contracts.js";
+import { getContractsForChain } from "../config/contracts.js";
 
 const factoryAbi = parseAbi(VAULT_FACTORY_ABI);
 
 // role: "borrower" or "lender"
 export function useLatestVault(address, role) {
+  const chainId = useChainId();
+  const contracts = getContractsForChain(chainId);
+
   const functionName =
     role === "lender" ? "getVaultsByLender" : "getVaultsByBorrower";
 
   const { data, isLoading, refetch } = useReadContract({
-    address: CONTRACTS.vaultFactory,
+    address: contracts.vaultFactory,
     abi: factoryAbi,
     functionName,
     args: [address],

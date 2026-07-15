@@ -1,4 +1,4 @@
-import { useReadContracts } from "wagmi";
+import { useChainId, useReadContracts } from "wagmi";
 import { parseAbi } from "viem";
 import { VAULT_ABI, ERC20_ABI } from "../config/abis.js";
 import { AAVE } from "../config/contracts.js";
@@ -6,10 +6,16 @@ import { AAVE } from "../config/contracts.js";
 const vaultAbi = parseAbi(VAULT_ABI);
 const erc20Abi = parseAbi(ERC20_ABI);
 
+const ARBITRUM_SEPOLIA_CHAIN_ID = 421614;
+
 // Reads every field the UI needs for a single vault in one multicall,
 // plus the vault's current aWETH balance (its Aave position, if any).
+// The Aave read is skipped on any network other than Arbitrum Sepolia,
+// since there's no real Aave deployment on a local Hardhat node.
 export function useVaultData(vaultAddress) {
+  const chainId = useChainId();
   const enabled = Boolean(vaultAddress);
+  const aaveAvailable = chainId === ARBITRUM_SEPOLIA_CHAIN_ID;
 
   const { data, isLoading, refetch } = useReadContracts({
     contracts: [
@@ -24,12 +30,16 @@ export function useVaultData(vaultAddress) {
       { address: vaultAddress, abi: vaultAbi, functionName: "isExpired" },
       { address: vaultAddress, abi: vaultAbi, functionName: "depositPaid" },
       { address: vaultAddress, abi: vaultAbi, functionName: "vaultBalance" },
-      {
-        address: AAVE.wethAToken,
-        abi: erc20Abi,
-        functionName: "balanceOf",
-        args: [vaultAddress],
-      },
+      ...(aaveAvailable
+        ? [
+            {
+              address: AAVE.wethAToken,
+              abi: erc20Abi,
+              functionName: "balanceOf",
+              args: [vaultAddress],
+            },
+          ]
+        : []),
     ],
     query: {
       enabled,
@@ -53,7 +63,7 @@ export function useVaultData(vaultAddress) {
     isExpired,
     depositPaid,
     vaultBalance,
-    aWethBalance,
+    aWethBalanceResult,
   ] = data.map((d) => d.result);
 
   return {
@@ -70,7 +80,7 @@ export function useVaultData(vaultAddress) {
       isExpired,
       depositPaid,
       vaultBalance,
-      aWethBalance,
+      aWethBalance: aaveAvailable ? aWethBalanceResult : 0n,
     },
     isLoading,
     refetch,

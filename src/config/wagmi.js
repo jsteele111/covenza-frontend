@@ -1,5 +1,5 @@
 import { getDefaultConfig } from "@rainbow-me/rainbowkit";
-import { arbitrumSepolia } from "wagmi/chains";
+import { arbitrumSepolia, hardhat } from "wagmi/chains";
 import { http } from "wagmi";
 
 // Get a free WalletConnect project ID at https://cloud.reown.com
@@ -15,9 +15,10 @@ const RPC_URL = import.meta.env.VITE_ARBITRUM_SEPOLIA_RPC_URL || "";
 export const wagmiConfig = getDefaultConfig({
   appName: "Covenza",
   projectId: WALLETCONNECT_PROJECT_ID,
-  chains: [arbitrumSepolia],
+  chains: [arbitrumSepolia, hardhat],
   transports: {
     [arbitrumSepolia.id]: RPC_URL ? http(RPC_URL) : http(),
+    [hardhat.id]: http("http://127.0.0.1:8545"),
   },
   ssr: false,
 });

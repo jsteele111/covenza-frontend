@@ -5,6 +5,11 @@
 export const KYC_REGISTRY_ABI = [
   "function isVerified(address) view returns (bool)",
   "function statusOf(address wallet) view returns (bool verified, uint256 verifiedTs, uint256 revokedTs)",
+  "function operator() view returns (address)",
+  "function verify(address wallet) external",
+  "function verifyWithSignature(address wallet, uint256 expiry, bytes signature) external",
+  "function revoke(address wallet) external",
+  "function badgeIdOf(address wallet) view returns (uint256)",
 ];
 
 export const VAULT_FACTORY_ABI = [

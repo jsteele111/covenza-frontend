@@ -1,13 +1,30 @@
-import { useAccount } from "wagmi";
+import { useAccount, useChainId, useReadContract } from "wagmi";
 import { useEffect } from "react";
+import { parseAbi } from "viem";
+import { KYC_REGISTRY_ABI } from "../config/abis.js";
+import { getContractsForChain } from "../config/contracts.js";
 import { useLatestVault } from "../hooks/useLatestVault.js";
 import { useVaultData } from "../hooks/useVaultData.js";
 import { useVaultAction } from "../hooks/useVaultAction.js";
 import { VaultStatement } from "./VaultStatement.jsx";
 import { ActionButton } from "./ActionButton.jsx";
+import { KycGate } from "./KycGate.jsx";
+
+const kycAbi = parseAbi(KYC_REGISTRY_ABI);
 
 export function BorrowerTab() {
   const { address, isConnected } = useAccount();
+  const chainId = useChainId();
+  const contracts = getContractsForChain(chainId);
+
+  const { data: isVerified, error: kycError } = useReadContract({
+    address: contracts.kycRegistry,
+    abi: kycAbi,
+    functionName: "isVerified",
+    args: [address],
+    query: { enabled: Boolean(address), refetchInterval: 8000 },
+  });
+
   const { latestVaultAddress, refetch: refetchVaultList } = useLatestVault(address, "borrower");
   const { vault, refetch: refetchVaultData } = useVaultData(latestVaultAddress);
   const { call, isPending, isConfirming, isSuccess, error, reset } = useVaultAction();
@@ -22,6 +39,18 @@ export function BorrowerTab() {
 
   if (!isConnected) {
     return <EmptyState message="Connect the borrower wallet to view your vault." />;
+  }
+
+  if (kycError) {
+    return <EmptyState message={`KYC check failed: ${kycError.shortMessage || kycError.message}`} />;
+  }
+
+  if (isVerified === undefined) {
+    return <EmptyState message="Checking KYC status..." />;
+  }
+
+  if (!isVerified) {
+    return <KycGate address={address} />;
   }
 
   if (!vault) {
