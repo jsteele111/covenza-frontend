@@ -19,6 +19,7 @@ export function OperatorTab() {
   const [verifiedAddresses, setVerifiedAddresses] = useState([]);
   const [loading, setLoading] = useState(true);
   const [revokingAddress, setRevokingAddress] = useState(null);
+  const [revokeError, setRevokeError] = useState(null);
 
   const { data: operatorAddress } = useReadContract({
     address: contracts.kycRegistry,
@@ -81,14 +82,23 @@ export function OperatorTab() {
     return <EmptyState message="This wallet is not the KYC registry operator. Connect the operator wallet to manage verified addresses." />;
   }
 
-  function revoke(addr) {
+  async function revoke(addr) {
+    setRevokeError(null);
     setRevokingAddress(addr);
-    writeContract({
-      address: contracts.kycRegistry,
-      abi: kycAbi,
-      functionName: "revoke",
-      args: [addr],
-    });
+    try {
+      const fees = await publicClient.estimateFeesPerGas();
+      writeContract({
+        address: contracts.kycRegistry,
+        abi: kycAbi,
+        functionName: "revoke",
+        args: [addr],
+        maxFeePerGas: fees.maxFeePerGas * 2n,
+        maxPriorityFeePerGas: fees.maxPriorityFeePerGas,
+      });
+    } catch (err) {
+      setRevokeError(err.shortMessage || err.message || "Failed to estimate gas fees.");
+      setRevokingAddress(null);
+    }
   }
 
   if (loading) {
@@ -134,7 +144,9 @@ export function OperatorTab() {
         );
       })}
 
-      {error && <p style={{ fontSize: 12, color: "var(--brick)" }}>{error.shortMessage || error.message}</p>}
+      {(error || revokeError) && (
+        <p style={{ fontSize: 12, color: "var(--brick)" }}>{error?.shortMessage || error?.message || revokeError}</p>
+      )}
     </div>
   );
 }
