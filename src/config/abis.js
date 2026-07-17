@@ -13,11 +13,11 @@ export const KYC_REGISTRY_ABI = [
 ];
 
 export const VAULT_FACTORY_ABI = [
-  "function deployVault(address borrower, uint256 repaymentDue, uint256 duration, bool useSeconds, uint256 depositAmount) payable returns (address)",
+  "function deployVault(address borrower, uint256 feeRateBps, uint256 duration, bool useSeconds, uint256 depositAmount) payable returns (address)",
   "function getVaultsByBorrower(address borrower) view returns (address[])",
   "function getVaultsByLender(address lender) view returns (address[])",
   "function totalVaults() view returns (uint256)",
-  "event VaultDeployed(address indexed vault, address indexed lender, address indexed borrower, uint256 principal, uint256 depositRequired, uint256 deadline)",
+  "event VaultDeployed(address indexed vault, address indexed lender, address indexed borrower, uint256 principal, uint256 depositRequired, uint256 feeRateBps, uint256 deadline)",
 ];
 
 export const VAULT_ABI = [
@@ -25,7 +25,8 @@ export const VAULT_ABI = [
   "function borrower() view returns (address)",
   "function principal() view returns (uint256)",
   "function deposit() view returns (uint256)",
-  "function repaymentDue() view returns (uint256)",
+  "function feeRateBps() view returns (uint256)",
+  "function investedAmount() view returns (uint256)",
   "function deadline() view returns (uint256)",
   "function isSettled() view returns (bool)",
   "function requiredDeposit() view returns (uint256)",
@@ -34,11 +35,9 @@ export const VAULT_ABI = [
   "function isExpired() view returns (bool)",
   "function payDeposit() payable",
   "function supplyToAave(uint256 amount)",
-  "function repay() payable",
-  "function settleDefault()",
+  "function settle()",
   "event DepositReceived(address indexed borrower, uint256 amount)",
-  "event LoanRepaid(address indexed borrower, uint256 amountRepaid, uint256 depositReturned, uint256 timestamp)",
-  "event LoanDefaulted(address indexed triggeredBy, uint256 principalSwept, uint256 depositApplied, uint256 depositReturned, uint256 timestamp)",
+  "event Settled(address indexed triggeredBy, bool early, uint256 totalReturned, uint256 lenderPayout, uint256 borrowerPayout, uint256 fee, uint256 timestamp)",
   "event WhitelistedActionExecuted(address indexed borrower, address indexed target, uint256 amount, uint256 timestamp)",
   "event AaveWithdrawn(uint256 amount, uint256 timestamp)",
 ];

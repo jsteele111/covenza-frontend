@@ -68,27 +68,34 @@ export function BorrowerTab() {
     ? "Loan deadline has passed."
     : null;
 
-  const supplyDisabled = vault.isSettled || !vault.depositPaid || vault.isExpired || vault.vaultBalance === 0n;
+  // Only `principal` may ever be invested — deposit is pure untouched
+  // collateral and is never part of what's available to supply to Aave.
+  const investableRemaining = vault.principal - vault.investedAmount;
+
+  const supplyDisabled = vault.isSettled || !vault.depositPaid || vault.isExpired || investableRemaining <= 0n;
   const supplyReason = vault.isSettled
     ? "Vault already settled."
     : !vault.depositPaid
     ? "Pay the deposit before supplying to Aave."
     : vault.isExpired
     ? "Loan deadline has passed."
-    : vault.vaultBalance === 0n
-    ? "No balance available to supply."
+    : investableRemaining <= 0n
+    ? "Full principal already invested."
     : null;
 
-  const repayDisabled = vault.isSettled || !vault.depositPaid || vault.isExpired;
-  const repayReason = vault.isSettled
+  // settle() replaces both the old repay() and settleDefault() — it's the
+  // single settlement function for both an early voluntary close (borrower
+  // only, before the deadline) and a post-deadline close (callable by
+  // anyone, keeper-style). It takes no value: the vault pays out entirely
+  // from its own liquidated balance, the borrower never sends funds in.
+  const isEarly = !vault.isExpired;
+  const settleDisabled = vault.isSettled || (isEarly && !vault.depositPaid);
+  const settleReason = vault.isSettled
     ? "Vault already settled."
-    : !vault.depositPaid
-    ? "Pay the deposit before repaying."
-    : vault.isExpired
-    ? "Loan deadline has passed — this loan is in default."
+    : isEarly && !vault.depositPaid
+    ? "Pay the deposit before closing the loan."
     : null;
-
-  const settleDisabled = vault.isSettled || !vault.isExpired;
+  const settleLabel = isEarly ? "Repay & close loan" : "Settle expired loan";
 
   return (
     <div>
@@ -109,28 +116,19 @@ export function BorrowerTab() {
           disabled={supplyDisabled}
           disabledReason={supplyReason}
           loading={busy}
-          onClick={() => call(vault.address, "supplyToAave", [vault.vaultBalance])}
+          onClick={() => call(vault.address, "supplyToAave", [investableRemaining])}
         />
       </div>
 
       <div style={{ display: "flex", gap: 10, marginTop: 10 }}>
         <ActionButton
-          label="Repay loan"
-          primary={!repayDisabled}
-          disabled={repayDisabled}
-          disabledReason={repayReason}
+          label={settleLabel}
+          primary={!settleDisabled}
+          disabled={settleDisabled}
+          disabledReason={settleReason}
           loading={busy}
-          onClick={() => call(vault.address, "repay", [], vault.repaymentDue)}
+          onClick={() => call(vault.address, "settle")}
         />
-        {vault.isExpired && !vault.isSettled && (
-          <ActionButton
-            label="Settle expired loan"
-            primary={false}
-            disabled={settleDisabled}
-            loading={busy}
-            onClick={() => call(vault.address, "settleDefault")}
-          />
-        )}
       </div>
 
       {error && (

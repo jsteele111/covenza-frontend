@@ -1,8 +1,8 @@
 import { useState, useEffect } from "react";
-import { useAccount, useReadContract, useWriteContract, useWaitForTransactionReceipt, usePublicClient } from "wagmi";
+import { useAccount, useChainId, useReadContract, useWriteContract, useWaitForTransactionReceipt, usePublicClient } from "wagmi";
 import { parseAbi, parseEther, isAddress } from "viem";
 import { KYC_REGISTRY_ABI, VAULT_FACTORY_ABI } from "../config/abis.js";
-import { CONTRACTS } from "../config/contracts.js";
+import { getContractsForChain } from "../config/contracts.js";
 import { useLatestVault } from "../hooks/useLatestVault.js";
 import { useVaultData } from "../hooks/useVaultData.js";
 import { VaultStatement } from "./VaultStatement.jsx";
@@ -13,9 +13,12 @@ const factoryAbi = parseAbi(VAULT_FACTORY_ABI);
 
 export function LenderTab() {
   const { address, isConnected } = useAccount();
+  const chainId = useChainId();
+  const contracts = getContractsForChain(chainId);
+
   const [borrower, setBorrower] = useState("");
   const [principal, setPrincipal] = useState("0.001");
-  const [repaymentDue, setRepaymentDue] = useState("0.00103");
+  const [feeRatePercent, setFeeRatePercent] = useState("3"); // e.g. "3" = 3%, charged in full regardless of early or on-time close
   const [depositRequired, setDepositRequired] = useState("0.00015");
   const [durationValue, setDurationValue] = useState("7");
   const [shortMode, setShortMode] = useState(false);
@@ -23,7 +26,7 @@ export function LenderTab() {
   const borrowerIsValidAddress = isAddress(borrower);
 
   const { data: isVerified } = useReadContract({
-    address: CONTRACTS.kycRegistry,
+    address: contracts.kycRegistry,
     abi: kycAbi,
     functionName: "isVerified",
     args: [borrower],
@@ -48,23 +51,28 @@ export function LenderTab() {
     return <EmptyState message="Connect the lender wallet to originate a vault." />;
   }
 
-  const disabled = !borrowerIsValidAddress || isVerified === false;
+  const feeRateBps = feeRatePercent ? Math.round(parseFloat(feeRatePercent) * 100) : NaN;
+  const feeRateValid = Number.isFinite(feeRateBps) && feeRateBps > 0;
+
+  const disabled = !borrowerIsValidAddress || isVerified === false || !feeRateValid;
   const disabledReason = !borrowerIsValidAddress
     ? "Enter a valid borrower address."
     : isVerified === false
     ? "This address is not KYC verified."
+    : !feeRateValid
+    ? "Enter a valid fee rate greater than zero."
     : null;
 
   async function originate() {
     const fees = await publicClient.estimateFeesPerGas();
 
     writeContract({
-      address: CONTRACTS.vaultFactory,
+      address: contracts.vaultFactory,
       abi: factoryAbi,
       functionName: "deployVault",
       args: [
         borrower,
-        parseEther(repaymentDue),
+        BigInt(feeRateBps),
         BigInt(durationValue),
         shortMode,
         parseEther(depositRequired),
@@ -104,17 +112,22 @@ export function LenderTab() {
         </Row2>
 
         <Row2>
-          <Field label="Repayment due (ETH)">
-            <input value={repaymentDue} onChange={(e) => setRepaymentDue(e.target.value)} style={inputStyle} />
+          <Field label="Fee rate (%)">
+            <input value={feeRatePercent} onChange={(e) => setFeeRatePercent(e.target.value)} style={inputStyle} />
           </Field>
           <Field label={shortMode ? "Duration (seconds)" : "Duration (days)"}>
             <input value={durationValue} onChange={(e) => setDurationValue(e.target.value)} style={inputStyle} />
           </Field>
         </Row2>
 
+        <p style={{ fontSize: 11, color: "var(--parch-dim)", margin: "-8px 0 12px" }}>
+          Fee is fixed at origination and charged in full — the borrower pays the same fee whether
+          they close early or hold to the deadline.
+        </p>
+
         <label style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 4, marginBottom: 16, fontSize: 12, color: "var(--parch-dim)" }}>
           <input type="checkbox" checked={shortMode} onChange={(e) => setShortMode(e.target.checked)} />
-          Test mode — treat duration as seconds, not days (for testing default settlement quickly)
+          Test mode — treat duration as seconds, not days (for testing settlement quickly)
         </label>
 
         <div style={{ marginTop: 6 }}>

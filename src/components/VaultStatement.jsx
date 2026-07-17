@@ -14,6 +14,13 @@ export function VaultStatement({ vault }) {
 
   const aWethBalance = vault.aWethBalance || 0n;
 
+  // What the lender receives at settlement: principal + the fixed fee,
+  // charged in full regardless of early or on-time close. This is the
+  // direct successor to the old fixed "repayment due" figure.
+  const lenderReceives = vault.principal != null && vault.fee != null
+    ? vault.principal + vault.fee
+    : undefined;
+
   return (
     <div style={cardStyle}>
       <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", marginBottom: 16 }}>
@@ -32,7 +39,8 @@ export function VaultStatement({ vault }) {
           label={vault.depositPaid ? "Deposit paid" : "Deposit required"}
           value={formatEth(vault.depositPaid ? vault.deposit : vault.requiredDeposit)}
         />
-        <Row label="Repayment due" value={formatEth(vault.repaymentDue)} />
+        <Row label="Fee rate" value={vault.feeRateBps != null ? `${Number(vault.feeRateBps) / 100}%` : "—"} />
+        <Row label="Lender receives (at settlement)" value={formatEth(lenderReceives)} />
         <Row label="Deadline" value={vault.isSettled ? "Settled" : formatCountdown(vault.deadline)} />
       </div>
 

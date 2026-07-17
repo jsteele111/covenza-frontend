@@ -24,7 +24,8 @@ export function useVaultData(vaultAddress) {
       { address: vaultAddress, abi: vaultAbi, functionName: "principal" },
       { address: vaultAddress, abi: vaultAbi, functionName: "deposit" },
       { address: vaultAddress, abi: vaultAbi, functionName: "requiredDeposit" },
-      { address: vaultAddress, abi: vaultAbi, functionName: "repaymentDue" },
+      { address: vaultAddress, abi: vaultAbi, functionName: "feeRateBps" },
+      { address: vaultAddress, abi: vaultAbi, functionName: "investedAmount" },
       { address: vaultAddress, abi: vaultAbi, functionName: "deadline" },
       { address: vaultAddress, abi: vaultAbi, functionName: "isSettled" },
       { address: vaultAddress, abi: vaultAbi, functionName: "isExpired" },
@@ -57,7 +58,8 @@ export function useVaultData(vaultAddress) {
     principal,
     deposit,
     requiredDeposit,
-    repaymentDue,
+    feeRateBps,
+    investedAmount,
     deadline,
     isSettled,
     isExpired,
@@ -65,6 +67,13 @@ export function useVaultData(vaultAddress) {
     vaultBalance,
     aWethBalanceResult,
   ] = data.map((d) => d.result);
+
+  // Derived convenience value: the fixed fee owed to the lender, charged in
+  // full regardless of early or on-time settlement. Not a separate on-chain
+  // read — computed the same way Vault.sol computes it internally.
+  const fee = principal != null && feeRateBps != null
+    ? (principal * feeRateBps) / 10000n
+    : undefined;
 
   return {
     vault: {
@@ -74,7 +83,9 @@ export function useVaultData(vaultAddress) {
       principal,
       deposit,
       requiredDeposit,
-      repaymentDue,
+      feeRateBps,
+      fee,
+      investedAmount,
       deadline,
       isSettled,
       isExpired,

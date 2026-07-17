@@ -4,9 +4,9 @@ import { VAULT_ABI } from "../config/abis.js";
 
 const vaultAbi = parseAbi(VAULT_ABI);
 
-// Wraps a single Vault write function (payDeposit, supplyToAave, repay,
-// settleDefault) with pending/confirming/success state, so components
-// don't each re-implement the same wagmi plumbing.
+// Wraps a single Vault write function (payDeposit, supplyToAave, settle)
+// with pending/confirming/success state, so components don't each
+// re-implement the same wagmi plumbing.
 //
 // Explicitly overrides gas fees with a 2x safety margin on top of the
 // current base fee. Arbitrum's base fee shifts slightly between blocks,
