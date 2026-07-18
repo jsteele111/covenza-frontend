@@ -3,7 +3,8 @@ import { useAccount, useChainId, useReadContract, useWriteContract, useWaitForTr
 import { parseAbi, parseAbiItem } from "viem";
 import { KYC_REGISTRY_ABI } from "../config/abis.js";
 import { getContractsForChain } from "../config/contracts.js";
-import { shortAddress } from "../utils/format.js";
+import { shortAddress, formatEth } from "../utils/format.js";
+import { useSettledVaultsWithLoss } from "../hooks/useSettledVaultsWithLoss.js";
 
 const kycAbi = parseAbi(KYC_REGISTRY_ABI);
 const verifiedEvent = parseAbiItem(
@@ -29,6 +30,8 @@ export function OperatorTab() {
 
   const { writeContract, data: hash, isPending, error } = useWriteContract();
   const { isLoading: isConfirming, isSuccess } = useWaitForTransactionReceipt({ hash });
+
+  const { lossyVaults, isLoading: lossyLoading, refetch: refetchLossy } = useSettledVaultsWithLoss();
 
   const loadVerifiedAddresses = useCallback(async () => {
     setLoading(true);
@@ -68,9 +71,10 @@ export function OperatorTab() {
   useEffect(() => {
     if (isSuccess) {
       loadVerifiedAddresses();
+      refetchLossy();
       setRevokingAddress(null);
     }
-  }, [isSuccess, loadVerifiedAddresses]);
+  }, [isSuccess, loadVerifiedAddresses, refetchLossy]);
 
   if (!isConnected) {
     return <EmptyState message="Connect the operator wallet to manage verified addresses." />;
@@ -101,31 +105,112 @@ export function OperatorTab() {
     }
   }
 
-  if (loading) {
-    return <EmptyState message="Loading verified addresses..." />;
-  }
-
-  if (verifiedAddresses.length === 0) {
-    return <EmptyState message="No currently verified addresses." />;
-  }
+  const busyFor = (addr) =>
+    (isPending || isConfirming) && revokingAddress?.toLowerCase() === addr?.toLowerCase();
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-      <p style={{ fontSize: 11, color: "var(--parch-dim)", margin: "0 0 4px" }}>
-        Verification now happens automatically via signed attestation — this tab is for manual
-        revocation only (e.g. post-default, sanctions match, or re-screening failure).
-      </p>
+    <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
 
-      {verifiedAddresses.map((addr) => {
-        const busy = (isPending || isConfirming) && revokingAddress?.toLowerCase() === addr.toLowerCase();
-        return (
-          <div key={addr} style={cardStyle}>
+      {/* --- Loss history: visibility layer for manual revocation review --- */}
+      <div>
+        <p style={{ fontSize: 11, color: "var(--parch-dim)", margin: "0 0 4px" }}>
+          Settled vaults with a loss — revocation is never automatic; review each case and
+          decide whether it warrants pulling KYC status.
+        </p>
+
+        {lossyLoading && (
+          <p style={{ fontSize: 12, color: "var(--parch-dim)", margin: "8px 0" }}>Checking settled vaults...</p>
+        )}
+
+        {!lossyLoading && lossyVaults.length === 0 && (
+          <p style={{ fontSize: 12, color: "var(--parch-dim)", margin: "8px 0" }}>
+            No lossy settlements found among vaults deployed by the current factory.
+          </p>
+        )}
+
+        {lossyVaults.map((v) => {
+          const isLenderImpacted = v.severity === 2;
+          return (
+            <div
+              key={v.address}
+              style={{
+                ...cardStyle,
+                borderColor: isLenderImpacted ? "var(--brick)" : "var(--hairline)",
+                marginTop: 10,
+              }}
+            >
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 10 }}>
+                <div>
+                  <span
+                    style={{
+                      fontSize: 11,
+                      color: isLenderImpacted ? "var(--brick)" : "var(--slate)",
+                      border: `1px solid ${isLenderImpacted ? "var(--brick)" : "var(--slate)"}`,
+                      borderRadius: 20,
+                      padding: "2px 8px",
+                    }}
+                  >
+                    {isLenderImpacted ? "Lender-impacted" : "Borrower-only"}
+                  </span>
+                  <p className="mono" style={{ fontSize: 12, color: "var(--parch)", margin: "8px 0 0" }}>
+                    {shortAddress(v.address)}
+                  </p>
+                  <p style={{ fontSize: 11, color: "var(--parch-dim)", margin: "2px 0 0" }}>
+                    Borrower: <span className="mono">{shortAddress(v.borrower)}</span>
+                  </p>
+                </div>
+              </div>
+
+              <div style={{ display: "flex", flexDirection: "column", gap: 6, paddingTop: 10, borderTop: "1px solid var(--hairline)", marginBottom: 12 }}>
+                <Row label="Principal" value={formatEth(v.principal)} />
+                <Row label="Total returned at settlement" value={formatEth(v.settledTotalReturned)} />
+                <Row label="Lender received" value={formatEth(v.settledLenderPayout)} />
+                <Row label="Borrower received" value={formatEth(v.settledBorrowerPayout)} />
+              </div>
+
+              <button
+                onClick={() => revoke(v.borrower)}
+                disabled={busyFor(v.borrower)}
+                style={{
+                  width: "100%",
+                  background: "transparent",
+                  color: "var(--brick)",
+                  border: "1px solid var(--brick)",
+                  borderRadius: 8,
+                  padding: 10,
+                  fontSize: 13,
+                  fontWeight: 500,
+                  opacity: busyFor(v.borrower) ? 0.6 : 1,
+                }}
+              >
+                {busyFor(v.borrower) ? "Confirming..." : "Revoke borrower's KYC"}
+              </button>
+            </div>
+          );
+        })}
+      </div>
+
+      {/* --- Existing verified-address list and manual revoke --- */}
+      <div>
+        <p style={{ fontSize: 11, color: "var(--parch-dim)", margin: "0 0 4px" }}>
+          Verification now happens automatically via signed attestation — revoke manually here
+          for any other reason (e.g. sanctions match, re-screening failure).
+        </p>
+
+        {loading && <p style={{ fontSize: 12, color: "var(--parch-dim)", margin: "8px 0" }}>Loading verified addresses...</p>}
+
+        {!loading && verifiedAddresses.length === 0 && (
+          <p style={{ fontSize: 12, color: "var(--parch-dim)", margin: "8px 0" }}>No currently verified addresses.</p>
+        )}
+
+        {!loading && verifiedAddresses.map((addr) => (
+          <div key={addr} style={{ ...cardStyle, marginTop: 10 }}>
             <p className="mono" style={{ fontSize: 12, color: "var(--parch)", margin: "0 0 12px" }}>
               {shortAddress(addr)}
             </p>
             <button
               onClick={() => revoke(addr)}
-              disabled={busy}
+              disabled={busyFor(addr)}
               style={{
                 width: "100%",
                 background: "transparent",
@@ -135,18 +220,27 @@ export function OperatorTab() {
                 padding: 10,
                 fontSize: 13,
                 fontWeight: 500,
-                opacity: busy ? 0.6 : 1,
+                opacity: busyFor(addr) ? 0.6 : 1,
               }}
             >
-              {busy ? "Confirming..." : "Revoke"}
+              {busyFor(addr) ? "Confirming..." : "Revoke"}
             </button>
           </div>
-        );
-      })}
+        ))}
+      </div>
 
       {(error || revokeError) && (
         <p style={{ fontSize: 12, color: "var(--brick)" }}>{error?.shortMessage || error?.message || revokeError}</p>
       )}
+    </div>
+  );
+}
+
+function Row({ label, value }) {
+  return (
+    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
+      <span style={{ fontSize: 12, color: "var(--parch-dim)" }}>{label}</span>
+      <span className="mono" style={{ fontSize: 13, color: "var(--parch)" }}>{value}</span>
     </div>
   );
 }
