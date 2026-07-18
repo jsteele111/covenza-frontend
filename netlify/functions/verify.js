@@ -1,6 +1,6 @@
 import { ethers } from "ethers";
 
-const KYC_REGISTRY_ADDRESS = "0x5B6C57cA408dD1bbE9cbdeB0cbb6e923E01a584D";
+const KYC_REGISTRY_ADDRESS = "0x842629E4C953De726946Db5886e50d4840F61FC4";
 
 const ABI = [
   "function isVerified(address) view returns (bool)",

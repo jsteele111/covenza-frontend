@@ -7,8 +7,8 @@
 const CONTRACTS_BY_CHAIN = {
   // Arbitrum Sepolia (chain id 421614)
   421614: {
-    kycRegistry: "0x5B6C57cA408dD1bbE9cbdeB0cbb6e923E01a584D",
-    vaultFactory: "0xAa7645d954f69BfEF8EF884fE96eff8a229FBD9f",
+    kycRegistry: "0x842629E4C953De726946Db5886e50d4840F61FC4",
+    vaultFactory: "0x7A5fCFcF4aE12A08dD01bB847C5992aC519446Fa",
   },
   // Local Hardhat node (chain id 31337)
   31337: {
