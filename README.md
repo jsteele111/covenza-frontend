@@ -1,40 +1,95 @@
-# Covenza — demo front-end
+# Covenza — web interface
 
-A minimal Lender/Borrower interface for the Covenza lending protocol on Arbitrum Sepolia.
+React interface for the [Covenza](https://github.com/jsteele111/covenza-backend) low-collateral lending protocol on Arbitrum.
 
-## Setup
+**Live: [covenza.xyz](https://covenza.xyz)** · [Protocol dashboard](https://covenza.xyz/dashboard) (no wallet required)
 
-1. Unzip this folder somewhere on your machine (separate from your `lending-poc` backend repo — this is its own project).
+Contracts and tests live in the separate [covenza-backend](https://github.com/jsteele111/covenza-backend) repository.
 
-2. Install dependencies:
-   ```
-   npm install
-   ```
+---
 
-3. Copy the example env file and fill it in:
-   ```
-   copy .env.example .env
-   ```
-   - `VITE_WALLETCONNECT_PROJECT_ID` — get a free one at https://cloud.reown.com. Only needed for WalletConnect/mobile wallets; MetaMask's browser extension works without it.
-   - `VITE_ARBITRUM_SEPOLIA_RPC_URL` — optional, your Alchemy RPC URL (same one from your backend's `.env`). Leave blank to use a public fallback.
+## What it does
 
-4. **Edit `src/config/contracts.js`** and paste in your current `KYCRegistry` and `VaultFactory` addresses from your backend's `deployed-addresses.json` (the `arbitrumSepolia` section). You'll need to update this file every time you rerun `deploy-infrastructure.js`, exactly like you already do for the backend scripts.
+Four views, gated by the connected wallet's on-chain role.
 
-5. Run it:
-   ```
-   npm run dev
-   ```
-   Open the local URL it prints (usually `http://localhost:5173`).
+### `/dashboard` — public, no wallet
 
-## Using the demo
+The transparency layer. Per-asset insurance reserves, active and all-time principal, the protocol-wide settlement configuration read live from `AssetRegistry`, and the deposit-sizing model's recommendations at 95% and 99% confidence across 7/30/90-day terms.
 
-- **Lender tab**: connect your lender wallet, enter a KYC-verified borrower address and loan terms, click "Originate vault."
-- **Borrower tab**: connect your borrower wallet to see the vault's live status (principal, deposit, deadline, Aave position) and act on it — pay deposit, supply to Aave, repay, or settle if expired.
-- Switch which wallet is connected in MetaMask to move between roles, same as you've been doing with the backend scripts.
+Deliberately requires no wallet — anyone should be able to assess the protocol's risk buffers before deciding to lend or borrow.
 
-## Known limitations (by design, for this PoC stage)
+### `/lender` — origination
 
-- No input validation on the lender's loan-terms form — entering something that isn't a valid number will cause an error rather than a friendly message.
-- Once a vault is settled, the status seal shows a generic "Settled" state rather than distinguishing repaid vs. defaulted — that distinction currently only lives in past event logs, not live contract state.
-- No support for viewing more than the most recent vault per wallet — if a wallet has originated or borrowed multiple vaults, only the latest one shows.
-- Assumes the connected wallet's role (lender/borrower) is already KYC-verified where relevant — the app doesn't walk through a KYC flow itself, since that's operator-controlled today.
+Asset selection across the whitelist, live KYC verification of the borrower address, and loan terms. The deposit field is backed by the VaR model: a one-click fill applies the recommended percentage for that asset and duration, and the insurance skim owed at origination is disclosed before signing.
+
+Origination is a two-transaction flow — ERC20 approval, then `deployVault` — surfaced as distinct steps rather than a single opaque button.
+
+### `/borrower` — vault operation
+
+Live vault statement, then the permitted actions:
+
+- **Deposit** — approve and pay. Until this completes, every other panel is disabled with an explicit reason, mirroring the contract's own `depositPaid()` gate.
+- **Aave** — supply and withdraw, bounded by the investable balance (`vaultBalance − deposit`).
+- **Swap** — directional swaps into whitelisted assets with borrower-set slippage floor and pool fee tier.
+- **Swap back** — per-held-asset unwind, with a standing note that anything still held is force-swapped at settlement.
+- **Settle** — repay and close.
+
+Each action reads its own disabled reason from live contract state, so the UI never offers something the contract would reject.
+
+### `/operator` — protocol governance
+
+Settlement loss history for manual KYC review, the asset whitelist, insurance pool reserves and draw cap, and the protocol-wide settlement configuration — TWAP window and tolerance, swap-back grace period, keeper bounty rate and cap. All five settlement values are submitted atomically, matching the contract's own `setSettlementConfig` signature.
+
+---
+
+## Design notes
+
+**Roles are detected, not selected.** `useWalletRole` reads the connected wallet's actual on-chain relationships — operator of the KYC registry, lender or borrower on any vault. Routes are guarded against direct navigation; a wallet without a role is redirected rather than shown an error. A wallet holding several roles gets a persistent switcher.
+
+**Amounts are formatted from contract-reported decimals**, never assumed. Every vault reads its own `asset()`, then that token's `decimals()`. A USDC vault and a WETH vault render correctly without special-casing.
+
+**Undeployed contracts are stated honestly.** `isPlaceholder()` checks for zero addresses before firing reads, so a network without a deployment shows "not yet deployed" rather than a wall of failed RPC calls.
+
+**ABIs are pre-parsed once** in `config/abis.js` and consumed directly. Re-wrapping an already-parsed ABI in `parseAbi()` throws at module load and takes the whole app down before React renders — a mistake worth only making once.
+
+---
+
+## Running locally
+
+```bash
+npm install
+cp .env.example .env    # then fill it in
+npm run dev
+```
+
+Opens on `http://localhost:5173`.
+
+Contract addresses are already configured in `src/config/contracts.js` for Arbitrum Sepolia — no manual editing needed. Update that file only after redeploying the contracts.
+
+### Environment
+
+| Variable | Required | Purpose |
+|---|---|---|
+| `VITE_WALLETCONNECT_PROJECT_ID` | Optional | WalletConnect / mobile wallets. MetaMask's extension works without it. Free ID at [cloud.reown.com](https://cloud.reown.com). |
+| `VITE_ARBITRUM_SEPOLIA_RPC_URL` | Recommended | Falls back to a public RPC, which rate-limits under the dashboard's parallel reads. |
+| `VITE_VERIFIER_SERVICE_URL` | Optional | Base URL for the KYC verifier. `http://localhost:4000` locally, `/.netlify/functions` when deployed. |
+| `VERIFIER_PRIVATE_KEY` | Server-side | Signs KYC attestations. Set in host environment only — deliberately no `VITE_` prefix, which would expose it in the client bundle. |
+
+Anything prefixed `VITE_` is compiled into the public bundle and readable by anyone. Treat those as configuration, not secrets.
+
+---
+
+## Stack
+
+React 19 · Vite · wagmi v2 · viem · RainbowKit · React Router v7
+
+Deployed on Netlify. `netlify.toml` carries a catch-all rewrite so direct visits to `/dashboard` and the role routes resolve client-side rather than 404ing.
+
+---
+
+## Known limitations
+
+- **KYC intake is simulated.** The form collects no real documents and performs no checks. The signed attestation and resulting on-chain badge are real; the identity verification behind them is not yet.
+- **No live price quotes on swaps.** `minAmountOut` is borrower-supplied and enforced on-chain. The UI doesn't estimate it, because there's no on-chain quote function it could source safely — asking directly is more honest than displaying a number it can't stand behind.
+- **Vault history is scoped to the current factory.** Vaults deployed by an earlier factory don't appear.
+- **Testnet only.** Not deployed against mainnet contracts.
