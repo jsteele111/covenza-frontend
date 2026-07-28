@@ -1,16 +1,52 @@
 import { useState, useEffect, useCallback } from "react";
-import { useAccount, useChainId, useReadContract, useWriteContract, useWaitForTransactionReceipt, usePublicClient } from "wagmi";
-import { parseAbi, parseAbiItem } from "viem";
-import { KYC_REGISTRY_ABI } from "../config/abis.js";
-import { getContractsForChain } from "../config/contracts.js";
-import { shortAddress, formatEth } from "../utils/format.js";
+import { useAccount, useChainId, useReadContract, useReadContracts, useWriteContract, useWaitForTransactionReceipt, usePublicClient } from "wagmi";
+import { parseAbiItem, parseUnits, isAddress } from "viem";
+import { KYC_REGISTRY_ABI, ASSET_REGISTRY_ABI, INSURANCE_POOL_ABI, ERC20_ABI } from "../config/abis.js";
+import { getContractsForChain, isPlaceholder, symbolForToken } from "../config/contracts.js";
+import { shortAddress, formatTokenAmount } from "../utils/format.js";
 import { useSettledVaultsWithLoss } from "../hooks/useSettledVaultsWithLoss.js";
+import { ActionButton } from "./ActionButton.jsx";
 
-const kycAbi = parseAbi(KYC_REGISTRY_ABI);
+// abis.js already exports pre-parsed ABIs — do not re-wrap in parseAbi().
+const kycAbi = KYC_REGISTRY_ABI;
+const assetRegistryAbi = ASSET_REGISTRY_ABI;
+const insurancePoolAbi = INSURANCE_POOL_ABI;
+const erc20Abi = ERC20_ABI;
+
 const verifiedEvent = parseAbiItem(
   "event AddressVerified(address indexed wallet, uint256 timestamp, bool viaSignature)"
 );
 
+function tryParseUnits(value, decimals) {
+  if (!value || decimals === undefined || decimals === null) return undefined;
+  try {
+    const parsed = parseUnits(value, decimals);
+    return parsed > 0n ? parsed : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * Group E6 rewrite. v1's operator view only covered KYC administration
+ * (manual revoke + a loss-history reviewer). That's preserved as-is below
+ * — the model of "revocation is a deliberate operator judgment call, never
+ * automatic" (see BRD §14.3) doesn't change for v2.
+ *
+ * What's new: v2 moved a real slice of protocol governance into
+ * AssetRegistry and InsurancePool — the whitelist, settlement TWAP/bounty
+ * parameters, and the insurance draw cap are now operator-controlled
+ * contract state (NFR-6: configurable without redeploying in-flight
+ * vaults), but v1's UI had no way to touch any of it. Without this,
+ * whitelisting a new asset post-launch would require a raw script call
+ * outside the app entirely. Three new panels close that gap:
+ *   - AssetWhitelistPanel   — add/remove whitelisted assets
+ *   - InsurancePoolPanel    — per-asset reserve visibility, draw cap,
+ *                             administrative withdrawal
+ *   - SettlementConfigPanel — TWAP window/tolerance, swap-back grace
+ *                             period, keeper bounty rate/cap (one atomic
+ *                             update, matching the contract's own design)
+ */
 export function OperatorTab() {
   const { address, isConnected } = useAccount();
   const chainId = useChainId();
@@ -74,7 +110,7 @@ export function OperatorTab() {
       refetchLossy();
       setRevokingAddress(null);
     }
-  }, [isSuccess, loadVerifiedAddresses, refetchLossy]);
+  }, [isSuccess]);
 
   if (!isConnected) {
     return <EmptyState message="Connect the operator wallet to manage verified addresses." />;
@@ -108,11 +144,14 @@ export function OperatorTab() {
   const busyFor = (addr) =>
     (isPending || isConfirming) && revokingAddress?.toLowerCase() === addr?.toLowerCase();
 
+  const registryReady = !isPlaceholder(contracts.assetRegistry) && !isPlaceholder(contracts.insurancePool);
+
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
+    <div style={{ display: "flex", flexDirection: "column", gap: 24 }}>
 
       {/* --- Loss history: visibility layer for manual revocation review --- */}
       <div>
+        <p style={sectionLabelStyle}>Settlement loss history</p>
         <p style={{ fontSize: 11, color: "var(--parch-dim)", margin: "0 0 4px" }}>
           Settled vaults with a loss — revocation is never automatic; review each case and
           decide whether it warrants pulling KYC status.
@@ -130,6 +169,7 @@ export function OperatorTab() {
 
         {lossyVaults.map((v) => {
           const isLenderImpacted = v.severity === 2;
+          const amount = (value) => `${formatTokenAmount(value, v.decimals)} ${v.symbol}`;
           return (
             <div
               key={v.address}
@@ -150,7 +190,7 @@ export function OperatorTab() {
                       padding: "2px 8px",
                     }}
                   >
-                    {isLenderImpacted ? "Lender-impacted" : "Borrower-only"}
+                    {isLenderImpacted ? "Lender-impacted" : "Borrower-only"} — {v.symbol}
                   </span>
                   <p className="mono" style={{ fontSize: 12, color: "var(--parch)", margin: "8px 0 0" }}>
                     {shortAddress(v.address)}
@@ -162,10 +202,13 @@ export function OperatorTab() {
               </div>
 
               <div style={{ display: "flex", flexDirection: "column", gap: 6, paddingTop: 10, borderTop: "1px solid var(--hairline)", marginBottom: 12 }}>
-                <Row label="Principal" value={formatEth(v.principal)} />
-                <Row label="Total returned at settlement" value={formatEth(v.settledTotalReturned)} />
-                <Row label="Lender received" value={formatEth(v.settledLenderPayout)} />
-                <Row label="Borrower received" value={formatEth(v.settledBorrowerPayout)} />
+                <Row label="Principal" value={amount(v.principal)} />
+                <Row label="Total returned at settlement" value={amount(v.settledTotalReturned)} />
+                {v.settledInsuranceDraw > 0n && (
+                  <Row label="Insurance pool draw" value={amount(v.settledInsuranceDraw)} />
+                )}
+                <Row label="Lender received" value={amount(v.settledLenderPayout)} />
+                <Row label="Borrower received" value={amount(v.settledBorrowerPayout)} />
               </div>
 
               <button
@@ -192,6 +235,7 @@ export function OperatorTab() {
 
       {/* --- Existing verified-address list and manual revoke --- */}
       <div>
+        <p style={sectionLabelStyle}>Verified addresses</p>
         <p style={{ fontSize: 11, color: "var(--parch-dim)", margin: "0 0 4px" }}>
           Verification now happens automatically via signed attestation — revoke manually here
           for any other reason (e.g. sanctions match, re-screening failure).
@@ -227,13 +271,511 @@ export function OperatorTab() {
             </button>
           </div>
         ))}
+
+        {(error || revokeError) && (
+          <p style={{ fontSize: 12, color: "var(--brick)", marginTop: 10 }}>{error?.shortMessage || error?.message || revokeError}</p>
+        )}
       </div>
 
-      {(error || revokeError) && (
-        <p style={{ fontSize: 12, color: "var(--brick)" }}>{error?.shortMessage || error?.message || revokeError}</p>
+      {/* --- v2 protocol governance panels --- */}
+      {registryReady ? (
+        <>
+          <AssetWhitelistPanel />
+          <InsurancePoolPanel />
+          <SettlementConfigPanel />
+        </>
+      ) : (
+        <div>
+          <p style={sectionLabelStyle}>Protocol governance</p>
+          <EmptyState message="The asset registry and insurance pool haven't been deployed on this network yet — whitelist, insurance, and settlement-config controls will appear here once Group F's deployment fills in real addresses." />
+        </div>
       )}
     </div>
   );
+}
+
+// --- Asset whitelist management ---
+
+function AssetWhitelistPanel() {
+  const chainId = useChainId();
+  const contracts = getContractsForChain(chainId);
+  const publicClient = usePublicClient();
+
+  const [newAsset, setNewAsset] = useState("");
+  const [newAToken, setNewAToken] = useState("");
+  const [pendingAsset, setPendingAsset] = useState(null); // "new" | address | null
+
+  const { writeContract, data: hash, isPending, error, reset } = useWriteContract();
+  const { isLoading: isConfirming, isSuccess } = useWaitForTransactionReceipt({ hash });
+
+  const { data: totalAssets, refetch: refetchTotal } = useReadContract({
+    address: contracts.assetRegistry,
+    abi: assetRegistryAbi,
+    functionName: "totalAssets",
+  });
+
+  const count = totalAssets ? Number(totalAssets) : 0;
+
+  const { data: addressResults, refetch: refetchAddresses } = useReadContracts({
+    contracts: Array.from({ length: count }, (_, i) => ({
+      address: contracts.assetRegistry,
+      abi: assetRegistryAbi,
+      functionName: "allAssets",
+      args: [BigInt(i)],
+    })),
+    query: { enabled: count > 0 },
+  });
+
+  const addresses = (addressResults || []).map((r) => r.result).filter(Boolean);
+
+  const { data: whitelistResults, refetch: refetchWhitelist } = useReadContracts({
+    contracts: addresses.map((addr) => ({
+      address: contracts.assetRegistry,
+      abi: assetRegistryAbi,
+      functionName: "isWhitelisted",
+      args: [addr],
+    })),
+    query: { enabled: addresses.length > 0 },
+  });
+
+  const assets = addresses.map((addr, i) => ({
+    address: addr,
+    symbol: symbolForToken(chainId, addr),
+    whitelisted: whitelistResults?.[i]?.result || false,
+  }));
+
+  useEffect(() => {
+    if (isSuccess) {
+      refetchTotal();
+      refetchAddresses();
+      refetchWhitelist();
+      setNewAsset("");
+      setNewAToken("");
+      setPendingAsset(null);
+      reset();
+    }
+  }, [isSuccess]);
+
+  const newAssetValid = isAddress(newAsset);
+  const newATokenValid = !newAToken || isAddress(newAToken); // blank = address(0), swap-only asset
+  const busy = isPending || isConfirming;
+
+  async function addAsset() {
+    setPendingAsset("new");
+    try {
+      const fees = await publicClient.estimateFeesPerGas();
+      writeContract({
+        address: contracts.assetRegistry,
+        abi: assetRegistryAbi,
+        functionName: "addAsset",
+        args: [newAsset, newAToken || "0x0000000000000000000000000000000000000000"],
+        maxFeePerGas: fees.maxFeePerGas * 2n,
+        maxPriorityFeePerGas: fees.maxPriorityFeePerGas,
+      });
+    } catch {
+      setPendingAsset(null);
+    }
+  }
+
+  async function removeAsset(assetAddress) {
+    setPendingAsset(assetAddress);
+    try {
+      const fees = await publicClient.estimateFeesPerGas();
+      writeContract({
+        address: contracts.assetRegistry,
+        abi: assetRegistryAbi,
+        functionName: "removeAsset",
+        args: [assetAddress],
+        maxFeePerGas: fees.maxFeePerGas * 2n,
+        maxPriorityFeePerGas: fees.maxPriorityFeePerGas,
+      });
+    } catch {
+      setPendingAsset(null);
+    }
+  }
+
+  return (
+    <div>
+      <p style={sectionLabelStyle}>Asset whitelist</p>
+      <div style={cardStyle}>
+        <Row2>
+          <Field label="Asset address">
+            <input value={newAsset} onChange={(e) => setNewAsset(e.target.value)} style={inputStyle} placeholder="0x..." />
+          </Field>
+          <Field label="Aave aToken (blank = swap-only)">
+            <input value={newAToken} onChange={(e) => setNewAToken(e.target.value)} style={inputStyle} placeholder="0x... or blank" />
+          </Field>
+        </Row2>
+        <ActionButton
+          label="Add asset"
+          primary={newAssetValid && newATokenValid}
+          disabled={!newAssetValid || !newATokenValid}
+          disabledReason={!newAssetValid ? "Enter a valid asset address." : "Aave aToken must be a valid address or blank."}
+          loading={busy && pendingAsset === "new"}
+          onClick={addAsset}
+        />
+        {error && <p style={errorTextStyle}>{error.shortMessage || error.message}</p>}
+      </div>
+
+      {assets.length > 0 && (
+        <div style={{ display: "flex", flexDirection: "column", gap: 10, marginTop: 12 }}>
+          {assets.map((a) => (
+            <div key={a.address} style={{ ...cardStyle, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+              <div>
+                <p className="mono" style={{ fontSize: 13, color: "var(--parch)", margin: "0 0 4px" }}>{a.symbol}</p>
+                <p className="mono" style={{ fontSize: 11, color: "var(--parch-dim)", margin: 0 }}>{shortAddress(a.address)}</p>
+              </div>
+              <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                <span
+                  style={{
+                    fontSize: 11,
+                    color: a.whitelisted ? "var(--brass)" : "var(--parch-dim)",
+                    border: `1px solid ${a.whitelisted ? "var(--brass)" : "var(--hairline)"}`,
+                    borderRadius: 20,
+                    padding: "2px 8px",
+                  }}
+                >
+                  {a.whitelisted ? "Whitelisted" : "Removed"}
+                </span>
+                {a.whitelisted && (
+                  <button
+                    onClick={() => removeAsset(a.address)}
+                    disabled={busy && pendingAsset === a.address}
+                    style={smallDangerButtonStyle}
+                  >
+                    {busy && pendingAsset === a.address ? "Confirming..." : "Remove"}
+                  </button>
+                )}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// --- Insurance pool: reserves, draw cap, administrative withdrawal ---
+
+function InsurancePoolPanel() {
+  const chainId = useChainId();
+  const contracts = getContractsForChain(chainId);
+  const publicClient = usePublicClient();
+
+  const { data: whitelistedAssets } = useReadContract({
+    address: contracts.assetRegistry,
+    abi: assetRegistryAbi,
+    functionName: "getWhitelistedAssets",
+  });
+  const assetList = whitelistedAssets || [];
+
+  const { data: reserveResults, refetch: refetchReserves } = useReadContracts({
+    contracts: assetList.flatMap((a) => [
+      { address: contracts.insurancePool, abi: insurancePoolAbi, functionName: "reserveOf", args: [a] },
+      { address: a, abi: erc20Abi, functionName: "decimals" },
+    ]),
+    query: { enabled: assetList.length > 0 },
+  });
+
+  const { data: drawCapBps, refetch: refetchDrawCap } = useReadContract({
+    address: contracts.insurancePool,
+    abi: insurancePoolAbi,
+    functionName: "drawCapBps",
+  });
+
+  const reserves = assetList.map((a, i) => ({
+    address: a,
+    symbol: symbolForToken(chainId, a),
+    reserve: reserveResults?.[i * 2]?.result,
+    decimals: reserveResults?.[i * 2 + 1]?.result,
+  }));
+
+  const [newDrawCap, setNewDrawCap] = useState("");
+  const [withdrawAsset, setWithdrawAsset] = useState("");
+  const [withdrawTo, setWithdrawTo] = useState("");
+  const [withdrawAmount, setWithdrawAmount] = useState("");
+  const [pendingAction, setPendingAction] = useState(null); // "drawcap" | "withdraw" | null
+
+  useEffect(() => {
+    if (!withdrawAsset && assetList.length > 0) setWithdrawAsset(assetList[0]);
+  }, [assetList, withdrawAsset]);
+
+  const { data: withdrawAssetDecimals } = useReadContract({
+    address: withdrawAsset,
+    abi: erc20Abi,
+    functionName: "decimals",
+    query: { enabled: Boolean(withdrawAsset) },
+  });
+
+  const { writeContract, data: hash, isPending, error, reset } = useWriteContract();
+  const { isLoading: isConfirming, isSuccess } = useWaitForTransactionReceipt({ hash });
+
+  useEffect(() => {
+    if (isSuccess) {
+      refetchReserves();
+      refetchDrawCap();
+      setNewDrawCap("");
+      setWithdrawTo("");
+      setWithdrawAmount("");
+      setPendingAction(null);
+      reset();
+    }
+  }, [isSuccess]);
+
+  const busy = isPending || isConfirming;
+
+  const drawCapValueValid =
+    newDrawCap !== "" && Number.isFinite(Number(newDrawCap)) && Number(newDrawCap) > 0 && Number(newDrawCap) <= 10000;
+
+  async function updateDrawCap() {
+    setPendingAction("drawcap");
+    try {
+      const fees = await publicClient.estimateFeesPerGas();
+      writeContract({
+        address: contracts.insurancePool,
+        abi: insurancePoolAbi,
+        functionName: "setDrawCapBps",
+        args: [BigInt(Math.round(Number(newDrawCap)))],
+        maxFeePerGas: fees.maxFeePerGas * 2n,
+        maxPriorityFeePerGas: fees.maxPriorityFeePerGas,
+      });
+    } catch {
+      setPendingAction(null);
+    }
+  }
+
+  const parsedWithdrawAmount = tryParseUnits(withdrawAmount, withdrawAssetDecimals);
+  const withdrawValid = Boolean(withdrawAsset) && isAddress(withdrawTo) && parsedWithdrawAmount !== undefined;
+
+  async function adminWithdraw() {
+    setPendingAction("withdraw");
+    try {
+      const fees = await publicClient.estimateFeesPerGas();
+      writeContract({
+        address: contracts.insurancePool,
+        abi: insurancePoolAbi,
+        functionName: "adminWithdraw",
+        args: [withdrawAsset, withdrawTo, parsedWithdrawAmount],
+        maxFeePerGas: fees.maxFeePerGas * 2n,
+        maxPriorityFeePerGas: fees.maxPriorityFeePerGas,
+      });
+    } catch {
+      setPendingAction(null);
+    }
+  }
+
+  return (
+    <div>
+      <p style={sectionLabelStyle}>Insurance pool</p>
+      <div style={cardStyle}>
+        <p style={{ fontSize: 11, color: "var(--parch-dim)", margin: "0 0 12px" }}>
+          Current draw cap: {drawCapBps != null ? `${Number(drawCapBps) / 100}%` : "—"} of loan principal, per settlement
+        </p>
+        {reserves.length > 0 && (
+          <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 16, paddingBottom: 16, borderBottom: "1px solid var(--hairline)" }}>
+            {reserves.map((r) => (
+              <Row key={r.address} label={r.symbol} value={`${formatTokenAmount(r.reserve, r.decimals)} ${r.symbol}`} />
+            ))}
+          </div>
+        )}
+
+        <Row2>
+          <Field label="New draw cap (bps, e.g. 1000 = 10%)">
+            <input value={newDrawCap} onChange={(e) => setNewDrawCap(e.target.value)} style={inputStyle} placeholder="1000" />
+          </Field>
+          <div style={{ alignSelf: "flex-end", marginBottom: 12 }}>
+            <ActionButton
+              label="Update draw cap"
+              primary={drawCapValueValid}
+              disabled={!drawCapValueValid}
+              disabledReason="Enter a value from 1 to 10000 bps."
+              loading={busy && pendingAction === "drawcap"}
+              onClick={updateDrawCap}
+            />
+          </div>
+        </Row2>
+      </div>
+
+      <div style={{ ...cardStyle, marginTop: 12 }}>
+        <p style={{ fontSize: 11, color: "var(--parch-dim)", margin: "0 0 12px" }}>Administrative withdrawal</p>
+        <Field label="Asset">
+          <AssetSwitcher assets={assetList} chainId={chainId} value={withdrawAsset} onChange={setWithdrawAsset} />
+        </Field>
+        <Row2>
+          <Field label="Recipient address">
+            <input value={withdrawTo} onChange={(e) => setWithdrawTo(e.target.value)} style={inputStyle} placeholder="0x..." />
+          </Field>
+          <Field label="Amount">
+            <input value={withdrawAmount} onChange={(e) => setWithdrawAmount(e.target.value)} style={inputStyle} placeholder="0.0" />
+          </Field>
+        </Row2>
+        <ActionButton
+          label="Withdraw"
+          primary={withdrawValid}
+          disabled={!withdrawValid}
+          disabledReason="Select an asset, a valid recipient address, and a valid amount."
+          loading={busy && pendingAction === "withdraw"}
+          onClick={adminWithdraw}
+        />
+        {error && <p style={errorTextStyle}>{error.shortMessage || error.message}</p>}
+      </div>
+    </div>
+  );
+}
+
+// --- Settlement configuration (TWAP, grace period, keeper bounty) ---
+
+function SettlementConfigPanel() {
+  const chainId = useChainId();
+  const contracts = getContractsForChain(chainId);
+  const publicClient = usePublicClient();
+
+  const { data: configResults, refetch } = useReadContracts({
+    contracts: [
+      { address: contracts.assetRegistry, abi: assetRegistryAbi, functionName: "twapWindow" },
+      { address: contracts.assetRegistry, abi: assetRegistryAbi, functionName: "twapToleranceBps" },
+      { address: contracts.assetRegistry, abi: assetRegistryAbi, functionName: "swapBackGracePeriod" },
+      { address: contracts.assetRegistry, abi: assetRegistryAbi, functionName: "bountyRatePerHourBps" },
+      { address: contracts.assetRegistry, abi: assetRegistryAbi, functionName: "bountyCapBps" },
+    ],
+  });
+
+  const [twapWindow, setTwapWindow] = useState("");
+  const [twapToleranceBps, setTwapToleranceBps] = useState("");
+  const [swapBackGracePeriod, setSwapBackGracePeriod] = useState("");
+  const [bountyRatePerHourBps, setBountyRatePerHourBps] = useState("");
+  const [bountyCapBps, setBountyCapBps] = useState("");
+  const [loaded, setLoaded] = useState(false);
+
+  useEffect(() => {
+    if (configResults && !loaded) {
+      setTwapWindow(configResults[0]?.result?.toString() || "");
+      setTwapToleranceBps(configResults[1]?.result?.toString() || "");
+      setSwapBackGracePeriod(configResults[2]?.result?.toString() || "");
+      setBountyRatePerHourBps(configResults[3]?.result?.toString() || "");
+      setBountyCapBps(configResults[4]?.result?.toString() || "");
+      setLoaded(true);
+    }
+  }, [configResults, loaded]);
+
+  const { writeContract, data: hash, isPending, error, reset } = useWriteContract();
+  const { isLoading: isConfirming, isSuccess } = useWaitForTransactionReceipt({ hash });
+
+  useEffect(() => {
+    if (isSuccess) {
+      refetch();
+      reset();
+    }
+  }, [isSuccess]);
+
+  const fields = [twapWindow, twapToleranceBps, swapBackGracePeriod, bountyRatePerHourBps, bountyCapBps];
+  const allValid = fields.every((v) => v !== "" && Number.isFinite(Number(v)) && Number(v) >= 0);
+  const busy = isPending || isConfirming;
+
+  async function save() {
+    try {
+      const fees = await publicClient.estimateFeesPerGas();
+      writeContract({
+        address: contracts.assetRegistry,
+        abi: assetRegistryAbi,
+        functionName: "setSettlementConfig",
+        args: [
+          Math.round(Number(twapWindow)),
+          BigInt(Math.round(Number(twapToleranceBps))),
+          BigInt(Math.round(Number(swapBackGracePeriod))),
+          BigInt(Math.round(Number(bountyRatePerHourBps))),
+          BigInt(Math.round(Number(bountyCapBps))),
+        ],
+        maxFeePerGas: fees.maxFeePerGas * 2n,
+        maxPriorityFeePerGas: fees.maxPriorityFeePerGas,
+      });
+    } catch {
+      // writeContract's own error state surfaces below
+    }
+  }
+
+  return (
+    <div>
+      <p style={sectionLabelStyle}>Settlement configuration</p>
+      <div style={cardStyle}>
+        <p style={{ fontSize: 11, color: "var(--parch-dim)", margin: "0 0 12px" }}>
+          All five values are set together, atomically, matching the contract's own design — a deliberate
+          statement of settlement policy, not a partial tweak.
+        </p>
+        <Row2>
+          <Field label="TWAP window (seconds)">
+            <input value={twapWindow} onChange={(e) => setTwapWindow(e.target.value)} style={inputStyle} />
+          </Field>
+          <Field label="TWAP tolerance (bps)">
+            <input value={twapToleranceBps} onChange={(e) => setTwapToleranceBps(e.target.value)} style={inputStyle} />
+          </Field>
+        </Row2>
+        <Row2>
+          <Field label="Swap-back grace period (seconds)">
+            <input value={swapBackGracePeriod} onChange={(e) => setSwapBackGracePeriod(e.target.value)} style={inputStyle} />
+          </Field>
+          <Field label="Bounty rate (bps per hour)">
+            <input value={bountyRatePerHourBps} onChange={(e) => setBountyRatePerHourBps(e.target.value)} style={inputStyle} />
+          </Field>
+        </Row2>
+        <Field label="Bounty cap (bps)">
+          <input value={bountyCapBps} onChange={(e) => setBountyCapBps(e.target.value)} style={inputStyle} />
+        </Field>
+        <ActionButton
+          label="Save settlement configuration"
+          primary={allValid}
+          disabled={!allValid}
+          disabledReason="All five fields must be filled with valid non-negative numbers."
+          loading={busy}
+          onClick={save}
+        />
+        {error && <p style={errorTextStyle}>{error.shortMessage || error.message}</p>}
+      </div>
+    </div>
+  );
+}
+
+// --- Shared local components/styles ---
+
+function AssetSwitcher({ assets, chainId, value, onChange }) {
+  if (assets.length === 0) {
+    return <p style={{ fontSize: 12, color: "var(--parch-dim)" }}>No whitelisted assets available.</p>;
+  }
+  return (
+    <div style={{ display: "inline-flex", background: "var(--ink)", border: "1px solid var(--hairline)", borderRadius: 8, padding: 3, marginBottom: 12 }}>
+      {assets.map((asset) => {
+        const active = asset === value;
+        return (
+          <button
+            key={asset}
+            type="button"
+            onClick={() => onChange(asset)}
+            style={{
+              border: "none", borderRadius: 6, padding: "6px 14px", fontSize: 12, cursor: "pointer",
+              background: active ? "var(--brass)" : "transparent",
+              color: active ? "#1C1C1A" : "var(--parch-dim)",
+              fontWeight: active ? 600 : 400,
+            }}
+          >
+            {symbolForToken(chainId, asset)}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+function Field({ label, children }) {
+  return (
+    <div style={{ marginBottom: 12, flex: 1 }}>
+      <label style={{ fontSize: 12, color: "var(--parch-dim)", display: "block", marginBottom: 6 }}>{label}</label>
+      {children}
+    </div>
+  );
+}
+
+function Row2({ children }) {
+  return <div style={{ display: "flex", gap: 12 }}>{children}</div>;
 }
 
 function Row({ label, value }) {
@@ -253,9 +795,44 @@ function EmptyState({ message }) {
   );
 }
 
+const sectionLabelStyle = {
+  fontSize: 13,
+  fontWeight: 600,
+  color: "var(--parch)",
+  margin: "0 0 8px",
+};
+
 const cardStyle = {
   background: "var(--panel)",
   borderRadius: 10,
   border: "1px solid var(--hairline)",
   padding: "18px 20px",
+};
+
+const inputStyle = {
+  width: "100%",
+  background: "var(--ink)",
+  border: "1px solid var(--hairline)",
+  borderRadius: 8,
+  padding: "9px 10px",
+  color: "var(--parch)",
+  fontSize: 13,
+  fontFamily: "IBM Plex Mono, monospace",
+};
+
+const errorTextStyle = {
+  fontSize: 12,
+  color: "var(--brick)",
+  marginTop: 10,
+};
+
+const smallDangerButtonStyle = {
+  background: "transparent",
+  color: "var(--brick)",
+  border: "1px solid var(--brick)",
+  borderRadius: 6,
+  padding: "6px 12px",
+  fontSize: 12,
+  fontWeight: 500,
+  cursor: "pointer",
 };

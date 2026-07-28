@@ -1,10 +1,10 @@
 import { useState } from "react";
 import { useAccount, useChainId, useReadContract, useWriteContract, usePublicClient } from "wagmi";
-import { parseAbi } from "viem";
 import { KYC_REGISTRY_ABI } from "../config/abis.js";
 import { getContractsForChain } from "../config/contracts.js";
 
-const kycAbi = parseAbi(KYC_REGISTRY_ABI);
+// abis.js already exports pre-parsed ABIs — do not re-wrap in parseAbi().
+const kycAbi = KYC_REGISTRY_ABI;
 
 // URL for the KYC verifier service (netlify/functions/verify.js in production,
 // scripts/mock-verify-server.js locally). Set VITE_VERIFIER_SERVICE_URL in .env

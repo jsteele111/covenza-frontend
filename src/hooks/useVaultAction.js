@@ -1,8 +1,8 @@
 import { useWriteContract, useWaitForTransactionReceipt, usePublicClient } from "wagmi";
-import { parseAbi } from "viem";
 import { VAULT_ABI } from "../config/abis.js";
 
-const vaultAbi = parseAbi(VAULT_ABI);
+// abis.js already exports pre-parsed ABIs — do not re-wrap in parseAbi().
+const vaultAbi = VAULT_ABI;
 
 // Wraps a single Vault write function (payDeposit, supplyToAave, settle)
 // with pending/confirming/success state, so components don't each

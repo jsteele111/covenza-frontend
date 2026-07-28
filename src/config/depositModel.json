@@ -1,0 +1,13 @@
+{
+  "version": "1.1",
+  "modelDate": "2026-07-23",
+  "source": "Covenza_Deposit_Sizing_Model.xlsx v1.1 — computed from CoinGecko daily closes, 90-day trailing window, via tools/compute_volatility.py",
+  "methodology": "Worst-case correlation-adjusted cross-rate volatility per loan asset across the whitelist. Deposit % = (worstCaseAnnualVol / sqrt(365)) * sqrt(durationDays) * zScore.",
+  "zScores": { "z95": 1.6449, "z99": 2.3263 },
+  "worstCaseAnnualVol": {
+    "WETH": 0.4822,
+    "WBTC": 0.3447,
+    "USDC": 0.4811,
+    "USDT": 0.4822
+  }
+}

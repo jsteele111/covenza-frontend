@@ -1,10 +1,13 @@
 import { useChainId, useReadContract, useReadContracts } from "wagmi";
 import { parseAbi } from "viem";
-import { VAULT_FACTORY_ABI, VAULT_ABI } from "../config/abis.js";
-import { getContractsForChain } from "../config/contracts.js";
+import { VAULT_FACTORY_ABI, VAULT_ABI, ERC20_ABI } from "../config/abis.js";
+import { getContractsForChain, symbolForToken } from "../config/contracts.js";
 
-const factoryAbi = parseAbi(VAULT_FACTORY_ABI);
-const vaultAbi = parseAbi(VAULT_ABI);
+// abis.js already exports pre-parsed ABIs — do not re-wrap in parseAbi()
+// (parseAbi() is still used below for the one genuinely raw string signature).
+const factoryAbi = VAULT_FACTORY_ABI;
+const vaultAbi = VAULT_ABI;
+const erc20Abi = ERC20_ABI;
 
 // Surveys every vault deployed by the CURRENT factory and flags any that
 // settled with a loss (severity 1 = borrower-only, 2 = lender-impacted).
@@ -15,6 +18,12 @@ const vaultAbi = parseAbi(VAULT_ABI);
 // Note: only surveys vaults deployed by the CURRENT factory address. Any
 // vault deployed via a previous factory (before a redeploy) won't appear
 // here — same inherent scoping behavior as useLatestVault.js.
+//
+// Group E6 update: each lossy vault now also carries its own `asset`,
+// `decimals`, and `symbol` — v1 assumed every vault was ETH-denominated
+// and the operator UI formatted every amount with formatEth(), which is
+// simply wrong for a v2 vault settled in, say, USDC. Amounts are read and
+// displayed per-vault in that vault's own asset now, not assumed.
 export function useSettledVaultsWithLoss() {
   const chainId = useChainId();
   const contracts = getContractsForChain(chainId);
@@ -44,7 +53,7 @@ export function useSettledVaultsWithLoss() {
     .filter(Boolean);
 
   // For each vault, read isSettled + lossSeverity + the settled payout
-  // figures + borrower, in one multicall per field across all vaults.
+  // figures + borrower + asset, in one multicall per field across all vaults.
   const { data: stateResults, isLoading, refetch } = useReadContracts({
     contracts: vaultAddresses.flatMap((addr) => [
       { address: addr, abi: vaultAbi, functionName: "isSettled" },
@@ -55,20 +64,22 @@ export function useSettledVaultsWithLoss() {
       { address: addr, abi: vaultAbi, functionName: "settledLenderPayout" },
       { address: addr, abi: vaultAbi, functionName: "settledBorrowerPayout" },
       { address: addr, abi: vaultAbi, functionName: "settledFee" },
+      { address: addr, abi: vaultAbi, functionName: "settledInsuranceDraw" },
+      { address: addr, abi: vaultAbi, functionName: "asset" },
     ]),
     query: { enabled: vaultAddresses.length > 0, refetchInterval: 15000 },
   });
 
-  const lossyVaults = [];
+  const FIELDS_PER_VAULT = 10;
+  const lossyRaw = [];
   if (stateResults) {
-    const FIELDS_PER_VAULT = 8;
     for (let i = 0; i < vaultAddresses.length; i++) {
       const base = i * FIELDS_PER_VAULT;
       const isSettled = stateResults[base]?.result;
       const severity = stateResults[base + 1]?.result;
       if (!isSettled || !severity || Number(severity) === 0) continue;
 
-      lossyVaults.push({
+      lossyRaw.push({
         address: vaultAddresses[i],
         severity: Number(severity), // 1 = borrower-only, 2 = lender-impacted
         borrower: stateResults[base + 2]?.result,
@@ -77,9 +88,28 @@ export function useSettledVaultsWithLoss() {
         settledLenderPayout: stateResults[base + 5]?.result,
         settledBorrowerPayout: stateResults[base + 6]?.result,
         settledFee: stateResults[base + 7]?.result,
+        settledInsuranceDraw: stateResults[base + 8]?.result,
+        asset: stateResults[base + 9]?.result,
       });
     }
   }
+
+  // Decimals per lossy vault's own asset — small list in practice, so a
+  // flat per-vault read (rather than deduping by asset) keeps this simple.
+  const { data: decimalsResults } = useReadContracts({
+    contracts: lossyRaw.map((v) => ({
+      address: v.asset,
+      abi: erc20Abi,
+      functionName: "decimals",
+    })),
+    query: { enabled: lossyRaw.length > 0 },
+  });
+
+  const lossyVaults = lossyRaw.map((v, i) => ({
+    ...v,
+    decimals: decimalsResults?.[i]?.result,
+    symbol: symbolForToken(chainId, v.asset),
+  }));
 
   // Lender-impacted first — the more severe category worth attention first.
   lossyVaults.sort((a, b) => b.severity - a.severity);

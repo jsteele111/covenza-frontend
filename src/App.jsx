@@ -1,15 +1,54 @@
-import { useState } from "react";
+import { useEffect } from "react";
+import { BrowserRouter, Routes, Route, Navigate, Link, useLocation, useNavigate } from "react-router-dom";
+import { useAccount } from "wagmi";
 import { ConnectButton } from "@rainbow-me/rainbowkit";
+import { useWalletRole } from "./hooks/useWalletRole.js";
+import { VisitorLanding } from "./components/VisitorLanding.jsx";
+import { RoleSwitcher } from "./components/RoleSwitcher.jsx";
+import { RouteErrorBoundary } from "./components/RouteErrorBoundary.jsx";
+import { PublicDashboard } from "./components/PublicDashboard.jsx";
+// Existing v1 view components — kept functional here as-is. Each is
+// rewritten for v2 in its own group (E4 lender, E5 borrower, E6
+// operator); until then they render inside the new routed shell exactly
+// as before, so the app stays usable at every step of the rebuild.
 import { LenderTab } from "./components/LenderTab.jsx";
 import { BorrowerTab } from "./components/BorrowerTab.jsx";
 import { OperatorTab } from "./components/OperatorTab.jsx";
 
+const ROLE_PRIORITY = ["operator", "lender", "borrower"];
+
 export default function App() {
-  const [tab, setTab] = useState("borrower");
+  return (
+    <BrowserRouter>
+      <Shell />
+    </BrowserRouter>
+  );
+}
+
+function Shell() {
+  const { isConnected } = useAccount();
+  const { roles, isLoading, hasAnyRole } = useWalletRole();
+  const location = useLocation();
+  const navigate = useNavigate();
+
+  // Auto-redirect ONLY away from "/" and ONLY once a real role is
+  // detected on-chain — never on any other path, and never guessed
+  // ahead of the actual read completing. Priority order: operator over
+  // lender over borrower, since it's the rarer, more privileged role;
+  // the switcher (if more than one role applies) lets the person move
+  // freely from there regardless of which one they land on first.
+  useEffect(() => {
+    if (isLoading || !hasAnyRole) return;
+    if (location.pathname !== "/") return;
+    const primary = ROLE_PRIORITY.find((r) => roles.includes(r));
+    if (primary) navigate(`/${primary}`, { replace: true });
+  }, [isLoading, hasAnyRole, roles, location.pathname, navigate]);
+
+  const isWide = hasAnyRole || location.pathname === "/dashboard";
 
   return (
     <div style={{ minHeight: "100%", display: "flex", justifyContent: "center", padding: "0 16px" }}>
-      <div style={{ width: "100%", maxWidth: 560 }}>
+      <div style={{ width: "100%", maxWidth: isWide ? 1100 : 720 }}>
         <header
           style={{
             display: "flex",
@@ -19,53 +58,77 @@ export default function App() {
             borderBottom: "1px solid var(--hairline)",
           }}
         >
-          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-            <span style={{ color: "var(--brass)", fontSize: 16 }}>&#9670;</span>
-            <span className="serif" style={{ fontSize: 18, fontWeight: 500, letterSpacing: "0.06em" }}>
-              Covenza
-            </span>
+          <div style={{ display: "flex", alignItems: "center", gap: 18 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+              <span style={{ color: "var(--brass)", fontSize: 16 }}>&#9670;</span>
+              <span className="serif" style={{ fontSize: 18, fontWeight: 500, letterSpacing: "0.06em" }}>
+                Covenza
+              </span>
+            </div>
+            <Link
+              to="/dashboard"
+              style={{
+                fontSize: 13,
+                color: location.pathname === "/dashboard" ? "var(--parch)" : "var(--parch-dim)",
+                textDecoration: "none",
+              }}
+            >
+              Dashboard
+            </Link>
           </div>
           <ConnectButton showBalance={false} chainStatus="icon" />
         </header>
 
-        <nav style={{ display: "flex", borderBottom: "1px solid var(--hairline)", marginBottom: 20 }}>
-          <TabButton active={tab === "lender"} onClick={() => setTab("lender")}>
-            Lender
-          </TabButton>
-          <TabButton active={tab === "borrower"} onClick={() => setTab("borrower")}>
-            Borrower
-          </TabButton>
-          <TabButton active={tab === "operator"} onClick={() => setTab("operator")}>
-            Operator
-          </TabButton>
-        </nav>
+        <main style={{ paddingTop: 20, paddingBottom: 40 }}>
+          {isConnected && !isLoading && <RoleSwitcher roles={roles} />}
 
-        <main style={{ paddingBottom: 40 }}>
-          {tab === "lender" && <LenderTab />}
-          {tab === "borrower" && <BorrowerTab />}
-          {tab === "operator" && <OperatorTab />}
+          <Routes>
+            <Route path="/" element={<VisitorLanding />} />
+            <Route
+              path="/dashboard"
+              element={<RouteErrorBoundary><PublicDashboard /></RouteErrorBoundary>}
+            />
+            <Route
+              path="/lender"
+              element={
+                <GuardedRoute allowed={roles.includes("lender")}>
+                  <RouteErrorBoundary><LenderTab /></RouteErrorBoundary>
+                </GuardedRoute>
+              }
+            />
+            <Route
+              path="/borrower"
+              element={
+                <GuardedRoute allowed={roles.includes("borrower")}>
+                  <RouteErrorBoundary><BorrowerTab /></RouteErrorBoundary>
+                </GuardedRoute>
+              }
+            />
+            <Route
+              path="/operator"
+              element={
+                <GuardedRoute allowed={roles.includes("operator")}>
+                  <RouteErrorBoundary><OperatorTab /></RouteErrorBoundary>
+                </GuardedRoute>
+              }
+            />
+            <Route path="*" element={<Navigate to="/" replace />} />
+          </Routes>
         </main>
       </div>
     </div>
   );
 }
 
-function TabButton({ active, onClick, children }) {
-  return (
-    <button
-      onClick={onClick}
-      style={{
-        background: "transparent",
-        border: "none",
-        borderBottom: active ? "2px solid var(--brass)" : "2px solid transparent",
-        color: active ? "var(--parch)" : "var(--parch-dim)",
-        fontWeight: active ? 500 : 400,
-        fontSize: 13,
-        padding: "12px 18px",
-        marginBottom: -1,
-      }}
-    >
-      {children}
-    </button>
-  );
+/**
+ * Guards a role route against direct navigation by a wallet that doesn't
+ * actually hold that role — typing /operator in manually, an old
+ * bookmark after a role changed, etc. Sends them back to "/" rather than
+ * showing content (or an error) for a role they don't have. This is the
+ * real enforcement; the operator route being unlinked from the landing
+ * page is just the social nicety on top of it, not the actual guard.
+ */
+function GuardedRoute({ allowed, children }) {
+  if (!allowed) return <Navigate to="/" replace />;
+  return children;
 }

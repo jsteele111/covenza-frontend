@@ -1,9 +1,9 @@
 import { useChainId, useReadContract } from "wagmi";
-import { parseAbi } from "viem";
 import { VAULT_FACTORY_ABI } from "../config/abis.js";
 import { getContractsForChain } from "../config/contracts.js";
 
-const factoryAbi = parseAbi(VAULT_FACTORY_ABI);
+// abis.js already exports pre-parsed ABIs — do not re-wrap in parseAbi().
+const factoryAbi = VAULT_FACTORY_ABI;
 
 // role: "borrower" or "lender"
 export function useLatestVault(address, role) {
