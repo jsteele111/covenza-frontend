@@ -16,13 +16,21 @@ import { parseAbi } from "viem";
 //   - Everything is ERC20-native. No payable functions anywhere: principal
 //     and deposit move via approve + transferFrom, ETH is wrapped to WETH
 //     at the edges.
-//   - deployVault takes the loan ASSET as its first argument (7 args, not
-//     5) and is non-payable — the lender must approve the factory for
-//     principal + insurance skim first (see quoteInsuranceSkim).
+//   - deployVault takes the loan ASSET as its first argument and a
+//     referrer as its last (8 args) and is non-payable — the lender must
+//     approve the factory for principal + insurance skim first (see
+//     quoteInsuranceSkim).
 //   - payDeposit is non-payable — the borrower must approve the vault for
 //     the required deposit first.
 //   - New swap/swapBack actions, new settlement outcome fields
 //     (settledInsuranceDraw, settledBounty), and a 9-arg Settled event.
+//
+// v2.1 ADDS the protocol fee: an add-on charged to the borrower at
+// settlement, taken from their residual and split with an optional
+// referrer. The lender's payout is unaffected by it. deployVault gained a
+// trailing `referrer` argument; the vault exposes settledProtocolFee /
+// settledReferrerFee alongside the other settlement outcome fields, plus
+// the fee terms it snapshotted at origination.
 
 export const KYC_REGISTRY_ABI = parseAbi([
   "function isVerified(address) view returns (bool)",
@@ -35,14 +43,20 @@ export const KYC_REGISTRY_ABI = parseAbi([
 ]);
 
 export const VAULT_FACTORY_ABI = parseAbi([
-  "function deployVault(address asset, address borrower, uint256 principal, uint256 feeRateBps, uint256 duration, bool useSeconds, uint256 depositAmount) returns (address)",
+  "function deployVault(address asset, address borrower, uint256 principal, uint256 feeRateBps, uint256 duration, bool useSeconds, uint256 depositAmount, address referrer) returns (address)",
   "function quoteInsuranceSkim(uint256 principal, uint256 feeRateBps) view returns (uint256)",
+  "function quoteProtocolFee(uint256 principal, uint256 feeRateBps) view returns (uint256)",
   "function insuranceSkimRateBps() view returns (uint256)",
+  "function protocolFeeRateBps() view returns (uint256)",
+  "function referrerShareBps() view returns (uint256)",
+  "function treasury() view returns (address)",
   "function getVaultsByBorrower(address borrower) view returns (address[])",
   "function getVaultsByLender(address lender) view returns (address[])",
   "function totalVaults() view returns (uint256)",
   "function allVaults(uint256 index) view returns (address)",
   "event VaultDeployed(address indexed vault, address indexed lender, address indexed borrower, address asset, uint256 principal, uint256 depositRequired, uint256 feeRateBps, uint256 insuranceSkim, uint256 deadline)",
+  "event TreasuryUpdated(address indexed previousTreasury, address indexed newTreasury)",
+  "event ProtocolFeeRateUpdated(uint256 previousBps, uint256 newBps)",
 ]);
 
 export const VAULT_ABI = parseAbi([
@@ -71,7 +85,14 @@ export const VAULT_ABI = parseAbi([
   "function settledBorrowerPayout() view returns (uint256)",
   "function settledFee() view returns (uint256)",
   "function settledBounty() view returns (uint256)",
+  "function settledProtocolFee() view returns (uint256)",
+  "function settledReferrerFee() view returns (uint256)",
   "function lossSeverity() view returns (uint8)",
+  // --- Protocol fee terms, snapshotted at origination ---
+  "function treasury() view returns (address)",
+  "function referrer() view returns (address)",
+  "function protocolFeeRateBps() view returns (uint256)",
+  "function referrerShareBps() view returns (uint256)",
   // --- Actions (all non-payable in v2) ---
   "function payDeposit()",
   "function supplyToAave(uint256 amount)",
@@ -86,6 +107,7 @@ export const VAULT_ABI = parseAbi([
   "event AaveWithdrawn(uint256 amount, uint256 timestamp)",
   "event ForcedSwapBack(address indexed heldAsset, uint256 amountIn, uint256 amountOut)",
   "event Settled(address indexed triggeredBy, bool early, uint256 totalReturned, uint256 insuranceDraw, uint256 lenderPayout, uint256 borrowerPayout, uint256 fee, uint256 bounty, uint256 timestamp)",
+  "event ProtocolFeePaid(address indexed treasury, address indexed referrer, uint256 treasuryAmount, uint256 referrerAmount)",
 ]);
 
 export const ASSET_REGISTRY_ABI = parseAbi([

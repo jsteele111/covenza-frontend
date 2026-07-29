@@ -10,6 +10,11 @@ import { formatTokenAmount, formatPercent } from "../utils/format.js";
 import { VaultStatement } from "./VaultStatement.jsx";
 import { ActionButton } from "./ActionButton.jsx";
 
+// Referrer address used for direct originations through this interface.
+// A platform integrating Covenza as a lending backend would pass its own
+// address here and earn a share of the protocol fee.
+const ZERO_ADDRESS = "0x0000000000000000000000000000000000000000";
+
 // abis.js already exports pre-parsed ABIs — do not re-wrap in parseAbi().
 const kycAbi = KYC_REGISTRY_ABI;
 const factoryAbi = VAULT_FACTORY_ABI;
@@ -120,6 +125,18 @@ export function LenderTab() {
 
   const requiredApproval =
     parsedPrincipal !== undefined ? parsedPrincipal + (insuranceSkim || 0n) : undefined;
+
+  // Protocol fee is an ADD-ON charged to the borrower at settlement — it
+  // does not reduce the lender's return and is not part of what the lender
+  // approves here. Surfaced so the origination form shows the borrower's
+  // true all-in cost rather than just the headline fee.
+  const { data: protocolFee } = useReadContract({
+    address: contracts.vaultFactory,
+    abi: factoryAbi,
+    functionName: "quoteProtocolFee",
+    args: [parsedPrincipal ?? 0n, BigInt(feeRateValid ? feeRateBps : 0)],
+    query: { enabled: Boolean(parsedPrincipal) && feeRateValid && registryReady },
+  });
 
   const { data: allowance, refetch: refetchAllowance } = useReadContract({
     address: selectedAsset,
@@ -234,6 +251,7 @@ export function LenderTab() {
           durationBigInt,
           shortMode,
           parsedDeposit,
+          ZERO_ADDRESS,          // referrer — direct origination, no integrator
         ],
         maxFeePerGas: fees.maxFeePerGas * 2n,
         maxPriorityFeePerGas: fees.maxPriorityFeePerGas,
@@ -312,6 +330,14 @@ export function LenderTab() {
           )}
         </p>
 
+        {protocolFee !== undefined && protocolFee > 0n && (
+          <p style={{ fontSize: 11, color: "var(--parch-dim)", margin: "-8px 0 12px" }}>
+            The borrower additionally pays a {formatTokenAmount(protocolFee, decimals)} {selectedSymbol} protocol
+            fee at settlement, on top of your fee — your return is unaffected by it. It is taken only from
+            the borrower's residual once you have been paid in full, so a loss yields no protocol fee at all.
+          </p>
+        )}
+
         <label style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 4, marginBottom: 16, fontSize: 12, color: "var(--parch-dim)" }}>
           <input type="checkbox" checked={shortMode} onChange={(e) => setShortMode(e.target.checked)} />
           Test mode — treat duration as seconds, not days (for testing settlement quickly)
@@ -380,7 +406,7 @@ function AssetSwitcher({ assets, chainId, value, onChange }) {
     return <p style={{ fontSize: 12, color: "var(--parch-dim)" }}>No whitelisted assets available.</p>;
   }
   return (
-    <div style={{ display: "inline-flex", background: "var(--ink)", border: "1px solid var(--hairline)", borderRadius: 8, padding: 3 }}>
+    <div style={{ display: "inline-flex", background: "var(--panel)", border: "0.5px solid var(--hairline)", borderRadius: 8, padding: 3 }}>
       {assets.map((asset) => {
         const active = asset === value;
         return (

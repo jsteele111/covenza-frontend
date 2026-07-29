@@ -1,4 +1,11 @@
 // -----------------------------------------------------------------------
+// vaultFactory was redeployed for v2.1 (protocol fee) on 2026-07-29,
+// reusing the existing KYCRegistry, AssetRegistry and InsurancePool — only
+// the factory and vault logic changed. The previous factory was
+// 0xd2bF51C369666076F1B0d0c544B8433ec74Db4e5; vaults it deployed remain
+// live and settleable on-chain but do not appear in this UI, which scopes
+// lookups to the current factory.
+//
 // Arbitrum Sepolia filled in from the Group F v2 deployment (deploy tx
 // confirmed; lifecycle-proof.js has since verified all three settlement
 // tiers against these exact addresses — see Vault A/B/C in that run's
@@ -16,7 +23,8 @@ const CONTRACTS_BY_CHAIN = {
     kycRegistry:   "0x842629E4C953De726946Db5886e50d4840F61FC4", // unchanged in v2 (contract not modified)
     assetRegistry: "0x8DB2d815caD86eABF217205523621603F712aAE5",
     insurancePool: "0x11D4f02FA69D0352fb01725d822Fb05C54AD6e41",
-    vaultFactory:  "0xd2bF51C369666076F1B0d0c544B8433ec74Db4e5",
+    vaultFactory:  "0x36DD23EBE221e30f9a71451F3a49F8cAd26c55Ab",  // v2.1 — protocol fee
+    treasury:      "0x2e6075b0B10c747357C2Bd58075af5e471f1f5F3",
     tokens: {
       WETH: "0xd5f3F5005810369f59e987D31c58ac45C7a0F1b0",
       WBTC: "0x6166892794FBAE7fC907ceB4578572Ff7B5151A1",
