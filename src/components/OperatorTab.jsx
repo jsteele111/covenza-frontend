@@ -5,6 +5,7 @@ import { KYC_REGISTRY_ABI, ASSET_REGISTRY_ABI, INSURANCE_POOL_ABI, ERC20_ABI } f
 import { getContractsForChain, isPlaceholder, symbolForToken } from "../config/contracts.js";
 import { shortAddress, formatTokenAmount } from "../utils/format.js";
 import { useSettledVaultsWithLoss } from "../hooks/useSettledVaultsWithLoss.js";
+import { useAssetPreflight } from "../hooks/useAssetPreflight.js";
 import { ActionButton } from "./ActionButton.jsx";
 
 // abis.js already exports pre-parsed ABIs — do not re-wrap in parseAbi().
@@ -305,6 +306,18 @@ function AssetWhitelistPanel() {
   const [newAToken, setNewAToken] = useState("");
   const [pendingAsset, setPendingAsset] = useState(null); // "new" | address | null
 
+  // Set when the operator has seen "no quotable pair" and wants to proceed
+  // anyway. Cleared whenever the candidate address changes, so an
+  // acknowledgement can never carry over to a different asset.
+  const [acknowledged, setAcknowledged] = useState(false);
+
+  const preflight = useAssetPreflight(newAsset);
+
+  function onCandidateChange(value) {
+    setNewAsset(value);
+    setAcknowledged(false);
+  }
+
   const { writeContract, data: hash, isPending, error, reset } = useWriteContract();
   const { isLoading: isConfirming, isSuccess } = useWaitForTransactionReceipt({ hash });
 
@@ -351,6 +364,7 @@ function AssetWhitelistPanel() {
       refetchWhitelist();
       setNewAsset("");
       setNewAToken("");
+      setAcknowledged(false);
       setPendingAsset(null);
       reset();
     }
@@ -359,6 +373,22 @@ function AssetWhitelistPanel() {
   const newAssetValid = isAddress(newAsset);
   const newATokenValid = !newAToken || isAddress(newAToken); // blank = address(0), swap-only asset
   const busy = isPending || isConfirming;
+
+  // The contract guard is what keeps funds safe; this only decides whether
+  // the operator is allowed to proceed without having read the report. The
+  // one genuinely hard stop is "not an ERC-20" — that is a wrong address,
+  // not a judgement call.
+  const needsAcknowledgement =
+    preflight.ready && preflight.hasCounterparties && !preflight.anyQuotable;
+
+  const blockedReason =
+    !newAssetValid                                ? "Enter a valid asset address."
+    : !newATokenValid                             ? "Aave aToken must be a valid address or blank."
+    : preflight.isChecking                        ? "Checking pools…"
+    : preflight.alreadyListed                     ? "This asset is already whitelisted."
+    : preflight.ready && !preflight.isErc20       ? "That address does not respond as an ERC-20 token."
+    : needsAcknowledgement && !acknowledged       ? "No quotable pair found — acknowledge below to proceed."
+    : null;
 
   async function addAsset() {
     setPendingAsset("new");
@@ -400,17 +430,36 @@ function AssetWhitelistPanel() {
       <div style={cardStyle}>
         <Row2>
           <Field label="Asset address">
-            <input value={newAsset} onChange={(e) => setNewAsset(e.target.value)} style={inputStyle} placeholder="0x..." />
+            <input value={newAsset} onChange={(e) => onCandidateChange(e.target.value)} style={inputStyle} placeholder="0x..." />
           </Field>
           <Field label="Aave aToken (blank = swap-only)">
             <input value={newAToken} onChange={(e) => setNewAToken(e.target.value)} style={inputStyle} placeholder="0x... or blank" />
           </Field>
         </Row2>
+
+        <PreflightReport preflight={preflight} />
+
+        {needsAcknowledgement && (
+          <label style={acknowledgeStyle}>
+            <input
+              type="checkbox"
+              checked={acknowledged}
+              onChange={(e) => setAcknowledged(e.target.checked)}
+              style={{ marginTop: 2 }}
+            />
+            <span>
+              Whitelist anyway. Borrowers will not be able to swap into this asset — the
+              vault refuses any position it could not force an exit from — but it remains
+              valid as a loan denomination.
+            </span>
+          </label>
+        )}
+
         <ActionButton
           label="Add asset"
-          primary={newAssetValid && newATokenValid}
-          disabled={!newAssetValid || !newATokenValid}
-          disabledReason={!newAssetValid ? "Enter a valid asset address." : "Aave aToken must be a valid address or blank."}
+          primary={blockedReason === null}
+          disabled={blockedReason !== null}
+          disabledReason={blockedReason || ""}
           loading={busy && pendingAsset === "new"}
           onClick={addAsset}
         />
@@ -737,6 +786,95 @@ function SettlementConfigPanel() {
 
 // --- Shared local components/styles ---
 
+/**
+ * Renders what the pre-flight found. Pairs with no pool are collapsed to a
+ * count — that's the unremarkable case. Pairs where a pool EXISTS but cannot
+ * serve the TWAP window are listed individually, because that is the shape
+ * that traps vaults: liquidity deep enough to swap in, no history to quote
+ * the way back out.
+ */
+function PreflightReport({ preflight }) {
+  if (!preflight.valid) return null;
+
+  if (preflight.isChecking) {
+    return <p style={preflightNoteStyle}>Checking pools and TWAP history…</p>;
+  }
+
+  if (!preflight.ready) return null;
+
+  if (!preflight.isErc20) {
+    return (
+      <div style={{ ...preflightBoxStyle, borderColor: "var(--brick)" }}>
+        <p style={{ ...preflightNoteStyle, color: "var(--brick)", margin: 0 }}>
+          This address does not respond to decimals() — it is not an ERC-20 token.
+          Check you have the token contract and not a pool, an aToken, or a wallet.
+        </p>
+      </div>
+    );
+  }
+
+  const noPoolCount = preflight.pairs.filter((p) => p.status === "no-pool").length;
+  const shown = preflight.pairs.filter((p) => p.status !== "no-pool");
+
+  return (
+    <div style={preflightBoxStyle}>
+      <p style={{ ...preflightNoteStyle, margin: "0 0 10px" }}>
+        Settlement quotes a {preflight.twapWindow ?? "—"}s TWAP against each paired asset.
+        Checked {preflight.pairs.length} pair{preflight.pairs.length === 1 ? "" : "s"}.
+      </p>
+
+      <Row
+        label={`${preflight.symbol || "Token"} · ${preflight.decimals} decimals`}
+        value={preflight.alreadyListed ? "already whitelisted" : "valid ERC-20"}
+      />
+
+      {!preflight.hasCounterparties && (
+        <p style={{ ...preflightNoteStyle, marginTop: 10 }}>
+          Nothing else is whitelisted yet, so there is no pair to check. Whitelist
+          the counterpart asset and the check will run against it.
+        </p>
+      )}
+
+      {shown.length > 0 && (
+        <div style={{ display: "flex", flexDirection: "column", gap: 6, marginTop: 12, paddingTop: 12, borderTop: "1px solid var(--hairline)" }}>
+          {shown.map((p) => {
+            const ok = p.status === "quotable";
+            const hasLiquidity = p.liquidity !== undefined && p.liquidity > 0n;
+            return (
+              <div key={`${p.counterparty}-${p.fee}`} style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 12 }}>
+                <span className="mono" style={{ fontSize: 12, color: "var(--parch)" }}>
+                  {p.counterpartySymbol} @ {p.feeLabel}
+                </span>
+                <span style={{ fontSize: 11, color: ok ? "var(--brass)" : "var(--brick)", textAlign: "right" }}>
+                  {ok
+                    ? `quotable${p.cardinality ? ` · cardinality ${p.cardinality}` : ""}`
+                    : `no TWAP history${p.cardinality ? ` · cardinality ${p.cardinality}` : ""}${hasLiquidity ? " · HAS LIQUIDITY" : ""}`}
+                </span>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {noPoolCount > 0 && (
+        <p style={{ ...preflightNoteStyle, marginTop: 10, marginBottom: 0 }}>
+          {noPoolCount} pair{noPoolCount === 1 ? "" : "s"} with no pool at all — not a
+          concern, borrowers simply cannot route there.
+        </p>
+      )}
+
+      {preflight.trapPairs.length > 0 && (
+        <p style={{ fontSize: 11, color: "var(--brick)", margin: "10px 0 0", lineHeight: 1.5 }}>
+          {preflight.trapPairs.length} pool{preflight.trapPairs.length === 1 ? " holds" : "s hold"} liquidity
+          but cannot be quoted. A swap in would fill; the forced swap-back at settlement
+          could not. The vault will refuse these at swap time — this is the guard working,
+          not a problem with the asset.
+        </p>
+      )}
+    </div>
+  );
+}
+
 function AssetSwitcher({ assets, chainId, value, onChange }) {
   if (assets.length === 0) {
     return <p style={{ fontSize: 12, color: "var(--parch-dim)" }}>No whitelisted assets available.</p>;
@@ -824,6 +962,31 @@ const errorTextStyle = {
   fontSize: 12,
   color: "var(--brick)",
   marginTop: 10,
+};
+
+const preflightBoxStyle = {
+  background: "var(--ink)",
+  border: "1px solid var(--hairline)",
+  borderRadius: 8,
+  padding: "14px 16px",
+  marginBottom: 12,
+};
+
+const preflightNoteStyle = {
+  fontSize: 11,
+  color: "var(--parch-dim)",
+  lineHeight: 1.5,
+};
+
+const acknowledgeStyle = {
+  display: "flex",
+  alignItems: "flex-start",
+  gap: 8,
+  fontSize: 11,
+  color: "var(--parch-dim)",
+  lineHeight: 1.5,
+  marginBottom: 12,
+  cursor: "pointer",
 };
 
 const smallDangerButtonStyle = {

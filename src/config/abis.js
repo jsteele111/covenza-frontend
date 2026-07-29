@@ -119,6 +119,7 @@ export const ASSET_REGISTRY_ABI = parseAbi([
   "function operator() view returns (address)",
   "function aavePool() view returns (address)",
   "function swapRouter() view returns (address)",
+  "function uniswapFactory() view returns (address)",
   "function weth() view returns (address)",
   "function twapWindow() view returns (uint32)",
   "function twapToleranceBps() view returns (uint256)",
@@ -150,6 +151,24 @@ export const ERC20_ABI = parseAbi([
   "function approve(address spender, uint256 amount) returns (bool)",
   "function decimals() view returns (uint8)",
   "function symbol() view returns (string)",
+]);
+
+// Uniswap V3, read-only. Used by the whitelist pre-flight to establish
+// whether an asset can actually be force-settled before it is whitelisted.
+//
+// The pair matters, not just the asset: Vault.swap() guards the quote
+// (destination -> loan asset) at the borrower's chosen fee tier, so a
+// candidate asset has to be checked against each asset it might be paired
+// with, at each tier. An asset can hold deep liquidity at one tier and be
+// completely unquotable at another.
+export const UNISWAP_V3_FACTORY_ABI = parseAbi([
+  "function getPool(address tokenA, address tokenB, uint24 fee) view returns (address)",
+]);
+
+export const UNISWAP_V3_POOL_ABI = parseAbi([
+  "function observe(uint32[] secondsAgos) view returns (int56[] tickCumulatives, uint160[] secondsPerLiquidityCumulativeX128s)",
+  "function liquidity() view returns (uint128)",
+  "function slot0() view returns (uint160 sqrtPriceX96, int24 tick, uint16 observationIndex, uint16 observationCardinality, uint16 observationCardinalityNext, uint8 feeProtocol, bool unlocked)",
 ]);
 
 // WETH adds wrap/unwrap on top of the standard ERC20 surface — used by the
