@@ -6,6 +6,7 @@ import { getContractsForChain, isPlaceholder, symbolForToken } from "../config/c
 import { shortAddress, formatTokenAmount } from "../utils/format.js";
 import { useSettledVaultsWithLoss } from "../hooks/useSettledVaultsWithLoss.js";
 import { useAssetPreflight } from "../hooks/useAssetPreflight.js";
+import { VENUE_LABELS } from "../hooks/useVaultData.js";
 import { ActionButton } from "./ActionButton.jsx";
 
 // abis.js already exports pre-parsed ABIs — do not re-wrap in parseAbi().
@@ -13,6 +14,13 @@ const kycAbi = KYC_REGISTRY_ABI;
 const assetRegistryAbi = ASSET_REGISTRY_ABI;
 const insurancePoolAbi = INSURANCE_POOL_ABI;
 const erc20Abi = ERC20_ABI;
+
+// Mirrors AssetRegistry.YieldVenue, ABI-encoded as uint8.
+const VENUE_NONE = 0;
+const VENUE_AAVE = 1;
+const VENUE_4626 = 2;
+
+const ZERO_ADDRESS = "0x0000000000000000000000000000000000000000";
 
 const verifiedEvent = parseAbiItem(
   "event AddressVerified(address indexed wallet, uint256 timestamp, bool viaSignature)"
@@ -304,6 +312,9 @@ function AssetWhitelistPanel() {
 
   const [newAsset, setNewAsset] = useState("");
   const [newAToken, setNewAToken] = useState("");
+  const [newVenue, setNewVenue] = useState(VENUE_NONE);
+  const [newVenueAddress, setNewVenueAddress] = useState("");
+  const [newGraceHours, setNewGraceHours] = useState("0");
   const [pendingAsset, setPendingAsset] = useState(null); // "new" | address | null
 
   // Set when the operator has seen "no quotable pair" and wants to proceed
@@ -364,6 +375,9 @@ function AssetWhitelistPanel() {
       refetchWhitelist();
       setNewAsset("");
       setNewAToken("");
+      setNewVenue(VENUE_NONE);
+      setNewVenueAddress("");
+      setNewGraceHours("0");
       setAcknowledged(false);
       setPendingAsset(null);
       reset();
@@ -371,8 +385,23 @@ function AssetWhitelistPanel() {
   }, [isSuccess]);
 
   const newAssetValid = isAddress(newAsset);
-  const newATokenValid = !newAToken || isAddress(newAToken); // blank = address(0), swap-only asset
+  const newATokenValid = !newAToken || isAddress(newAToken); // blank = address(0)
   const busy = isPending || isConfirming;
+
+  // Venue validity mirrors AssetRegistry._validateVenue, so an invalid
+  // combination is caught here rather than as an opaque revert.
+  const venueValid =
+    newVenue === VENUE_AAVE   ? isAddress(newAToken)
+    : newVenue === VENUE_4626 ? isAddress(newVenueAddress)
+    : true;
+
+  const venueReason =
+    newVenue === VENUE_AAVE   ? "The Aave venue needs the asset's aToken."
+    : newVenue === VENUE_4626 ? "The ERC-4626 venue needs a vault address."
+    : "";
+
+  const graceValid =
+    newGraceHours === "" || (Number.isFinite(Number(newGraceHours)) && Number(newGraceHours) >= 0 && Number(newGraceHours) <= 336);
 
   // The contract guard is what keeps funds safe; this only decides whether
   // the operator is allowed to proceed without having read the report. The
@@ -384,6 +413,8 @@ function AssetWhitelistPanel() {
   const blockedReason =
     !newAssetValid                                ? "Enter a valid asset address."
     : !newATokenValid                             ? "Aave aToken must be a valid address or blank."
+    : !venueValid                                 ? venueReason
+    : !graceValid                                 ? "Grace extension must be 0–336 hours."
     : preflight.isChecking                        ? "Checking pools…"
     : preflight.alreadyListed                     ? "This asset is already whitelisted."
     : preflight.ready && !preflight.isErc20       ? "That address does not respond as an ERC-20 token."
@@ -397,8 +428,14 @@ function AssetWhitelistPanel() {
       writeContract({
         address: contracts.assetRegistry,
         abi: assetRegistryAbi,
-        functionName: "addAsset",
-        args: [newAsset, newAToken || "0x0000000000000000000000000000000000000000"],
+        functionName: "addAssetWithVenue",
+        args: [
+          newAsset,
+          newAToken || ZERO_ADDRESS,
+          newVenue,
+          newVenue === VENUE_4626 ? newVenueAddress : ZERO_ADDRESS,
+          BigInt(Math.round(Number(newGraceHours || 0) * 3600)),
+        ],
         maxFeePerGas: fees.maxFeePerGas * 2n,
         maxPriorityFeePerGas: fees.maxPriorityFeePerGas,
       });
@@ -432,10 +469,50 @@ function AssetWhitelistPanel() {
           <Field label="Asset address">
             <input value={newAsset} onChange={(e) => onCandidateChange(e.target.value)} style={inputStyle} placeholder="0x..." />
           </Field>
-          <Field label="Aave aToken (blank = swap-only)">
+          <Field label="Aave aToken (blank if no Aave)">
             <input value={newAToken} onChange={(e) => setNewAToken(e.target.value)} style={inputStyle} placeholder="0x... or blank" />
           </Field>
         </Row2>
+
+        <Field label="Yield venue">
+          <div style={{ display: "inline-flex", background: "var(--ink)", border: "1px solid var(--hairline)", borderRadius: 8, padding: 3 }}>
+            {[VENUE_NONE, VENUE_AAVE, VENUE_4626].map((v) => {
+              const active = newVenue === v;
+              return (
+                <button
+                  key={v}
+                  type="button"
+                  onClick={() => setNewVenue(v)}
+                  style={{
+                    border: "none", borderRadius: 6, padding: "6px 14px", fontSize: 12, cursor: "pointer",
+                    background: active ? "var(--brass)" : "transparent",
+                    color: active ? "#1C1C1A" : "var(--parch-dim)",
+                    fontWeight: active ? 600 : 400,
+                  }}
+                >
+                  {VENUE_LABELS[v]}
+                </button>
+              );
+            })}
+          </div>
+        </Field>
+
+        <Row2>
+          {newVenue === VENUE_4626 && (
+            <Field label="ERC-4626 vault address">
+              <input value={newVenueAddress} onChange={(e) => setNewVenueAddress(e.target.value)} style={inputStyle} placeholder="0x..." />
+            </Field>
+          )}
+          <Field label="Grace extension (hours)">
+            <input value={newGraceHours} onChange={(e) => setNewGraceHours(e.target.value)} style={inputStyle} placeholder="0" />
+          </Field>
+        </Row2>
+
+        <p style={{ ...preflightNoteStyle, margin: "0 0 12px" }}>
+          The extension only ever lengthens the global swap-back grace, and applies to
+          vaults <em>holding</em> this asset. Leave it at zero for anything continuously
+          traded; a tokenised equity trades 24/5, so 72 hours covers a weekend.
+        </p>
 
         <PreflightReport preflight={preflight} />
 

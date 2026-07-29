@@ -95,8 +95,17 @@ export const VAULT_ABI = parseAbi([
   "function referrerShareBps() view returns (uint256)",
   // --- Actions (all non-payable in v2) ---
   "function payDeposit()",
+  // Canonical yield entry points. supplyToAave/withdrawFromAave remain as
+  // aliases on the contract — Aave is now one venue among several.
+  "function supplyToYield(uint256 amount)",
+  "function withdrawFromYield(uint256 amount)",
   "function supplyToAave(uint256 amount)",
   "function withdrawFromAave(uint256 amount)",
+  "function yieldVenueKind() view returns (uint8)",
+  "function yieldVenue() view returns (address)",
+  "function yieldPositionToken() view returns (address)",
+  "function yieldPositionValue() view returns (uint256)",
+  "function effectiveGracePeriod() view returns (uint256)",
   "function swap(address tokenOut, uint256 amountIn, uint256 minAmountOut, uint24 poolFee)",
   "function swapBack(address heldAsset, uint256 amountIn, uint256 minAmountOut)",
   "function settle()",
@@ -105,6 +114,8 @@ export const VAULT_ABI = parseAbi([
   "event SwapExecuted(address indexed tokenIn, address indexed tokenOut, uint256 amountIn, uint256 amountOut, bool isSwapBack)",
   "event AaveSupplied(uint256 amount, uint256 timestamp)",
   "event AaveWithdrawn(uint256 amount, uint256 timestamp)",
+  "event YieldSupplied(uint8 indexed venue, uint256 amount, uint256 timestamp)",
+  "event YieldWithdrawn(uint8 indexed venue, uint256 amount, uint256 timestamp)",
   "event ForcedSwapBack(address indexed heldAsset, uint256 amountIn, uint256 amountOut)",
   "event Settled(address indexed triggeredBy, bool early, uint256 totalReturned, uint256 insuranceDraw, uint256 lenderPayout, uint256 borrowerPayout, uint256 fee, uint256 bounty, uint256 timestamp)",
   "event ProtocolFeePaid(address indexed treasury, address indexed referrer, uint256 treasuryAmount, uint256 referrerAmount)",
@@ -126,11 +137,20 @@ export const ASSET_REGISTRY_ABI = parseAbi([
   "function swapBackGracePeriod() view returns (uint256)",
   "function bountyRatePerHourBps() view returns (uint256)",
   "function bountyCapBps() view returns (uint256)",
+  // Venue is an AssetRegistry.YieldVenue enum, ABI-encoded as uint8:
+  // 0 = None, 1 = Aave, 2 = ERC4626.
+  "function venueOf(address asset) view returns (uint8 venue, address venueAddress)",
+  "function gracePeriodOf(address asset) view returns (uint256)",
   "function addAsset(address asset, address aToken) external",
+  "function addAssetWithVenue(address asset, address aToken, uint8 venue, address venueAddress, uint256 gracePeriod) external",
+  "function setVenue(address asset, uint8 venue, address venueAddress) external",
+  "function setGracePeriod(address asset, uint256 gracePeriod) external",
   "function removeAsset(address asset) external",
   "function setSettlementConfig(uint32 twapWindow, uint256 twapToleranceBps, uint256 swapBackGracePeriod, uint256 bountyRatePerHourBps, uint256 bountyCapBps) external",
   "event AssetAdded(address indexed asset, address indexed aToken)",
   "event AssetRemoved(address indexed asset)",
+  "event VenueUpdated(address indexed asset, uint8 venue, address venueAddress)",
+  "event GracePeriodUpdated(address indexed asset, uint256 gracePeriod)",
 ]);
 
 export const INSURANCE_POOL_ABI = parseAbi([

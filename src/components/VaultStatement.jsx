@@ -59,7 +59,7 @@ export function VaultStatement({ vault }) {
         )}
       </div>
 
-      {vault.aTokenBalance > 0n && (
+      {vault.yieldPositionValue > 0n && (
         <div
           style={{
             marginTop: 16,
@@ -73,9 +73,14 @@ export function VaultStatement({ vault }) {
           }}
         >
           <div>
-            <p style={{ fontSize: 11, color: "var(--parch-dim)", margin: "0 0 4px" }}>Aave position</p>
+            <p style={{ fontSize: 11, color: "var(--parch-dim)", margin: "0 0 4px" }}>
+              Yield position — {vault.venueLabel}
+            </p>
+            {/* Denominated in the loan asset, not the venue's own token. An
+                ERC-4626 share count would be meaningless to compare against
+                principal; the vault converts before returning this. */}
             <p className="mono" style={{ fontSize: 14, color: "var(--slate)", margin: 0 }}>
-              {formatTokenAmount(vault.aTokenBalance, vault.decimals)} a{vault.symbol}
+              {formatTokenAmount(vault.yieldPositionValue, vault.decimals)} {vault.symbol}
             </p>
           </div>
           <span style={{ fontSize: 11, color: "var(--slate)", border: "1px solid var(--slate)", borderRadius: 20, padding: "3px 9px" }}>

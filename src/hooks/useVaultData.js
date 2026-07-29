@@ -7,6 +7,11 @@ const vaultAbi = VAULT_ABI;
 const erc20Abi = ERC20_ABI;
 const assetRegistryAbi = ASSET_REGISTRY_ABI;
 
+// Mirrors AssetRegistry.YieldVenue. The ERC-4626 label deliberately names
+// the standard rather than a protocol — the vault could be MetaMorpho,
+// Yearn, or anything else compliant, and the UI cannot tell which.
+export const VENUE_LABELS = { 0: "None", 1: "Aave V3", 2: "ERC-4626 vault" };
+
 /**
  * Reads every field the UI needs for a single vault — rewritten for v2's
  * multi-asset design (Group E4). Two changes from the v1 version this
@@ -47,6 +52,12 @@ export function useVaultData(vaultAddress) {
       { address: vaultAddress, abi: vaultAbi, functionName: "vaultBalance" },
       { address: vaultAddress, abi: vaultAbi, functionName: "heldAssetCount" },
       { address: vaultAddress, abi: vaultAbi, functionName: "lossSeverity" },
+      // Valued in the UNDERLYING by the vault itself, so an appreciating
+      // ERC-4626 share price is already accounted for and the UI never has
+      // to know the difference between rebasing and share-based accounting.
+      { address: vaultAddress, abi: vaultAbi, functionName: "yieldPositionValue" },
+      { address: vaultAddress, abi: vaultAbi, functionName: "yieldVenueKind" },
+      { address: vaultAddress, abi: vaultAbi, functionName: "effectiveGracePeriod" },
     ],
     query: { enabled, refetchInterval: 10000 },
   });
@@ -62,24 +73,20 @@ export function useVaultData(vaultAddress) {
     query: { enabled: Boolean(assetAddress) },
   });
 
-  // Stage 2 of the dependent read: which aToken (if any) backs this asset.
-  const { data: aToken } = useReadContract({
+  // Stage 2 of the dependent read: which yield venue (if any) backs this
+  // asset. Replaces the old aTokenOf lookup — Aave is now one venue among
+  // several, so the question is no longer "is there an aToken" but "is
+  // there a venue, and of what kind".
+  const { data: venueData } = useReadContract({
     address: contracts.assetRegistry,
     abi: assetRegistryAbi,
-    functionName: "aTokenOf",
+    functionName: "venueOf",
     args: [assetAddress],
     query: { enabled: Boolean(assetAddress) && !isPlaceholder(contracts.assetRegistry) },
   });
 
-  const aTokenConfigured = Boolean(aToken) && !isPlaceholder(aToken);
-
-  const { data: aTokenBalance } = useReadContract({
-    address: aToken,
-    abi: erc20Abi,
-    functionName: "balanceOf",
-    args: [vaultAddress],
-    query: { enabled: enabled && aTokenConfigured, refetchInterval: 10000 },
-  });
+  const venueKind    = venueData ? Number(venueData[0]) : 0;   // 0 None, 1 Aave, 2 ERC4626
+  const venueAddress = venueData ? venueData[1] : undefined;
 
   if (!enabled || !data) {
     return { vault: null, isLoading, refetch };
@@ -100,6 +107,9 @@ export function useVaultData(vaultAddress) {
     vaultBalance,
     heldAssetCountRaw,
     lossSeverityRaw,
+    yieldPositionValueRaw,
+    yieldVenueKindRaw,
+    effectiveGracePeriodRaw,
   ] = data.map((d) => d.result);
 
   // Derived convenience value: the fixed fee owed to the lender, charged in
@@ -139,11 +149,26 @@ export function useVaultData(vaultAddress) {
       investableRemaining,
       heldAssetCount: heldAssetCountRaw != null ? Number(heldAssetCountRaw) : 0,
       lossSeverity: lossSeverityRaw != null ? Number(lossSeverityRaw) : 0,
-      aTokenBalance: aTokenConfigured ? (aTokenBalance || 0n) : 0n,
-      // Whether THIS asset supports Aave at all (registry.aTokenOf != 0),
-      // independent of whether the vault currently holds a position — E5's
-      // borrower view gates the Supply-to-Aave UI on this, not on balance.
-      aaveSupported: aTokenConfigured,
+      // --- Yield venue ---
+      //
+      // venueKind is what the REGISTRY says this asset supports, and gates
+      // whether the supply UI is offered at all. vaultVenueKind is what this
+      // vault actually SNAPSHOTTED at first supply — they differ only if an
+      // operator repointed the asset mid-loan, in which case the vault keeps
+      // settling against its own.
+      venueKind,
+      venueAddress,
+      vaultVenueKind: yieldVenueKindRaw != null ? Number(yieldVenueKindRaw) : 0,
+      venueLabel: VENUE_LABELS[venueKind] || "None",
+      yieldSupported: venueKind > 0,
+      yieldPositionValue: yieldPositionValueRaw ?? 0n,
+      effectiveGracePeriod: effectiveGracePeriodRaw ?? 0n,
+
+      // Deprecated aliases, kept so nothing that still reads them breaks.
+      // aTokenBalance was always the position's value; under ERC-4626 the
+      // vault converts shares to underlying before returning it.
+      aTokenBalance: yieldPositionValueRaw ?? 0n,
+      aaveSupported: venueKind > 0,
     },
     isLoading,
     refetch,

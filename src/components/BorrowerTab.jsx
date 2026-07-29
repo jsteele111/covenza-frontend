@@ -225,15 +225,20 @@ export function BorrowerTab() {
     }
   }
 
-  // --- Aave ---
+  // --- Yield venue (Aave V3 or any ERC-4626 vault) ---
   const parsedSupply = tryParseUnits(supplyAmount, vault.decimals);
   const parsedWithdraw = tryParseUnits(withdrawAmount, vault.decimals);
 
-  const supplyDisabled = !canAct || !vault.depositPaid || !vault.aaveSupported || parsedSupply === undefined || parsedSupply > vault.investableRemaining;
+  // Always the position's value in the LOAN asset, never a share count —
+  // the vault converts before returning it, so ERC-4626 appreciation is
+  // already reflected and the amounts below are directly comparable.
+  const yieldPosition = vault.yieldPositionValue;
+
+  const supplyDisabled = !canAct || !vault.depositPaid || !vault.yieldSupported || parsedSupply === undefined || parsedSupply > vault.investableRemaining;
   const supplyReason = !vault.depositPaid
-    ? "Pay the deposit before supplying to Aave."
-    : !vault.aaveSupported
-    ? "This asset has no Aave support configured."
+    ? "Pay the deposit before supplying to the yield venue."
+    : !vault.yieldSupported
+    ? "This asset has no yield venue configured."
     : !canAct
     ? "Vault is settled or expired."
     : parsedSupply === undefined
@@ -242,15 +247,15 @@ export function BorrowerTab() {
     ? `Exceeds investable balance (${formatTokenAmount(vault.investableRemaining, vault.decimals)} ${vault.symbol}).`
     : null;
 
-  const withdrawDisabled = !canAct || vault.aTokenBalance <= 0n || parsedWithdraw === undefined || parsedWithdraw > vault.aTokenBalance;
-  const withdrawReason = vault.aTokenBalance <= 0n
-    ? "No Aave position to withdraw from."
+  const withdrawDisabled = !canAct || yieldPosition <= 0n || parsedWithdraw === undefined || parsedWithdraw > yieldPosition;
+  const withdrawReason = yieldPosition <= 0n
+    ? "No yield position to withdraw from."
     : !canAct
     ? "Vault is settled or expired."
     : parsedWithdraw === undefined
     ? "Enter a valid amount."
-    : parsedWithdraw > vault.aTokenBalance
-    ? "Exceeds current Aave position."
+    : parsedWithdraw > yieldPosition
+    ? "Exceeds current yield position."
     : null;
 
   // --- Swap ---
@@ -304,12 +309,15 @@ export function BorrowerTab() {
         )}
       </div>
 
-      {/* --- Aave --- */}
-      {vault.aaveSupported && (
+      {/* --- Yield venue --- */}
+      {vault.yieldSupported && (
         <div style={cardStyle}>
-          <p style={{ fontSize: 11, color: "var(--parch-dim)", margin: "0 0 4px" }}>Aave</p>
+          <p style={{ fontSize: 11, color: "var(--parch-dim)", margin: "0 0 4px" }}>Yield — {vault.venueLabel}</p>
           <p style={{ fontSize: 11, color: "var(--parch-dim)", margin: "0 0 12px" }}>
             Investable now: {formatTokenAmount(vault.investableRemaining, vault.decimals)} {vault.symbol}
+            {yieldPosition > 0n && (
+              <> · Supplied: {formatTokenAmount(yieldPosition, vault.decimals)} {vault.symbol}</>
+            )}
           </p>
           <Row2>
             <Field label={`Supply amount (${vault.symbol})`}>
@@ -324,12 +332,12 @@ export function BorrowerTab() {
                 loading={aaveAction.isPending || aaveAction.isConfirming ? aavePending === "supply" : false}
                 onClick={() => {
                   setAavePending("supply");
-                  aaveAction.call(latestVaultAddress, "supplyToAave", [parsedSupply]);
+                  aaveAction.call(latestVaultAddress, "supplyToYield", [parsedSupply]);
                 }}
               />
             </div>
           </Row2>
-          {vault.aTokenBalance > 0n && (
+          {yieldPosition > 0n && (
             <Row2>
               <Field label={`Withdraw amount (${vault.symbol})`}>
                 <input value={withdrawAmount} onChange={(e) => setWithdrawAmount(e.target.value)} style={inputStyle} placeholder="0.0" />
@@ -343,7 +351,7 @@ export function BorrowerTab() {
                   loading={aaveAction.isPending || aaveAction.isConfirming ? aavePending === "withdraw" : false}
                   onClick={() => {
                     setAavePending("withdraw");
-                    aaveAction.call(latestVaultAddress, "withdrawFromAave", [parsedWithdraw]);
+                    aaveAction.call(latestVaultAddress, "withdrawFromYield", [parsedWithdraw]);
                   }}
                 />
               </div>
