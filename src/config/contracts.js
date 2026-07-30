@@ -37,15 +37,21 @@ const CONTRACTS_BY_CHAIN = {
   // fast-forwarded.
   // -------------------------------------------------------------------
   46630: {
-    kycRegistry:   "0x78F17f13Ac94d39837fb699AdE42636D9D9C53Ad",
-    assetRegistry: "0x8345ce70CDa945D69c1C8D00BDcD68F303b747a0",
-    insurancePool: "0xd96bf3F430509945AE2643148F5435d75f4e67CA",
-    vaultFactory:  "0x22f4BD73CC429e82b1Ea5A2f832c9da21Ca02F3E",
+    kycRegistry:   "0x69eBB2a181dC2bbB418792F4a3cFcc7aFA84Eb61",
+    assetRegistry: "0xAE606Fe68f50cbf01De396DF5287460BE458AFd1",
+    insurancePool: "0x98e282B343CAF567DEA278c60a7Eb38705F45961",
+    vaultFactory:  "0xA54443f299B9a02c2A4900e8BA2BdBfc04A1aca5",
     treasury:      "0x6C9317C1F839Ca166a9B92d925515BD1Fd533a68", // deployer — set a dedicated address before mainnet
     tokens: {
       tUSDG: "0xe570b397f53C2220b71f8dFb7adB95Ceb9D5ce7c",
       tWETH: "0xc20fc2E57B4c9dbf66797C96b6421C540056C1C5",
     },
+
+    // Vaults are EIP-1167 clones of this implementation, which is deployed once
+    // and never initialised. Recorded because a clone carries no code of its
+    // own — point a contract verifier at the implementation, not at a vault.
+    vaultImplementation: "0xa329c429F5774514e43F46fff5ec929dCF5704DF",
+    uniswapTwapLibrary:  "0xa8d4bc7916206bE346724Bf7504a8930C8f4e4B7",
     // Reference only — the app reads uniswapFactory from AssetRegistry
     // on-chain rather than trusting this, so a registry repoint can't leave
     // the UI pointed at a stale factory.
@@ -54,7 +60,7 @@ const CONTRACTS_BY_CHAIN = {
       router:  "0x85E4CDedC656b131B0cB5577a59B6a1892697540",
       pool:    "0xa4C20E79C9D5881ea4137E81513a434199F7a00c", // tUSDG/tWETH 0.3%
     },
-    yieldVenue4626: "0x4d278a31123A7e8A7C08E7B1202F421b205b7dcE", // over tUSDG
+    yieldVenue4626: "0x354a7E3076B53fdA516E494691c3e3A334AaC891", // over tUSDG
   },
 
   // Arbitrum Sepolia (chain id 421614)
