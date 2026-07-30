@@ -44,7 +44,7 @@ export function useVaultData(vaultAddress) {
       { address: vaultAddress, abi: vaultAbi, functionName: "principal" },
       { address: vaultAddress, abi: vaultAbi, functionName: "deposit" },
       { address: vaultAddress, abi: vaultAbi, functionName: "requiredDeposit" },
-      { address: vaultAddress, abi: vaultAbi, functionName: "feeRateBps" },
+      { address: vaultAddress, abi: vaultAbi, functionName: "aprBps" },
       { address: vaultAddress, abi: vaultAbi, functionName: "deadline" },
       { address: vaultAddress, abi: vaultAbi, functionName: "isSettled" },
       { address: vaultAddress, abi: vaultAbi, functionName: "isExpired" },
@@ -58,6 +58,12 @@ export function useVaultData(vaultAddress) {
       { address: vaultAddress, abi: vaultAbi, functionName: "yieldPositionValue" },
       { address: vaultAddress, abi: vaultAbi, functionName: "yieldVenueKind" },
       { address: vaultAddress, abi: vaultAbi, functionName: "effectiveGracePeriod" },
+      // Interest is time-dependent now, so it is READ rather than computed.
+      // accruedFee is what the borrower owes at this moment; fullTermFee is
+      // the ceiling if the loan runs to term.
+      { address: vaultAddress, abi: vaultAbi, functionName: "accruedFee" },
+      { address: vaultAddress, abi: vaultAbi, functionName: "fullTermFee" },
+      { address: vaultAddress, abi: vaultAbi, functionName: "term" },
     ],
     query: { enabled, refetchInterval: 10000 },
   });
@@ -99,7 +105,7 @@ export function useVaultData(vaultAddress) {
     principal,
     deposit,
     requiredDeposit,
-    feeRateBps,
+    aprBps,
     deadline,
     isSettled,
     isExpired,
@@ -110,14 +116,17 @@ export function useVaultData(vaultAddress) {
     yieldPositionValueRaw,
     yieldVenueKindRaw,
     effectiveGracePeriodRaw,
+    accruedFeeRaw,
+    fullTermFeeRaw,
+    termRaw,
   ] = data.map((d) => d.result);
 
-  // Derived convenience value: the fixed fee owed to the lender, charged in
-  // full regardless of early or on-time settlement. Not a separate on-chain
-  // read — computed the same way Vault.sol computes it internally.
-  const fee = principal != null && feeRateBps != null
-    ? (principal * feeRateBps) / 10000n
-    : undefined;
+  // Interest owed RIGHT NOW. Previously this was computed here as
+  // principal * rate / 10000, which was safe while the fee was flat. It is no
+  // longer: the amount depends on elapsed time and on a minimum-charge floor
+  // that is itself capped at the full term. Reproducing that in JavaScript
+  // would be three chances to disagree with the contract, so it is read.
+  const fee = accruedFeeRaw ?? undefined;
 
   // See file header — replaces v1's investedAmount. vaultBalance already
   // includes the deposit, so what's actually free to move is the excess
@@ -139,8 +148,16 @@ export function useVaultData(vaultAddress) {
       principal,
       deposit,
       requiredDeposit,
-      feeRateBps,
+
+      // --- Interest ---
+      // aprBps is per ANNUM. fee is what is accrued now; fullTermFee is the
+      // ceiling. The gap between them is what a borrower saves by closing
+      // early, and is worth surfacing rather than hiding.
+      aprBps,
       fee,
+      fullTermFee: fullTermFeeRaw ?? undefined,
+      term: termRaw ?? undefined,
+
       deadline,
       isSettled,
       isExpired,

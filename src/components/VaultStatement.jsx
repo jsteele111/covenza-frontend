@@ -48,7 +48,18 @@ export function VaultStatement({ vault }) {
           label={vault.depositPaid ? "Deposit paid" : "Deposit required"}
           value={amount(vault.depositPaid ? vault.deposit : vault.requiredDeposit)}
         />
-        <Row label="Fee rate" value={vault.feeRateBps != null ? `${Number(vault.feeRateBps) / 100}%` : "—"} />
+        <Row label="Interest rate" value={vault.aprBps != null ? `${Number(vault.aprBps) / 100}% APR` : "—"} />
+        {/* Accrued is what is owed now; the full term is the ceiling. Showing
+            both makes the saving from closing early legible instead of
+            implicit. */}
+        <Row
+          label="Interest accrued"
+          value={vault.fee != null ? `${formatTokenAmount(vault.fee, vault.decimals)} ${vault.symbol}` : "—"}
+        />
+        <Row
+          label="Interest at full term"
+          value={vault.fullTermFee != null ? `${formatTokenAmount(vault.fullTermFee, vault.decimals)} ${vault.symbol}` : "—"}
+        />
         <Row label="Lender receives (at settlement)" value={amount(lenderReceives)} />
         <Row label="Deadline" value={vault.isSettled ? "Settled" : formatCountdown(vault.deadline)} />
         {vault.isSettled && vault.lossSeverity > 0 && (

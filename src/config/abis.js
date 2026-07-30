@@ -43,9 +43,15 @@ export const KYC_REGISTRY_ABI = parseAbi([
 ]);
 
 export const VAULT_FACTORY_ABI = parseAbi([
-  "function deployVault(address asset, address borrower, uint256 principal, uint256 feeRateBps, uint256 duration, bool useSeconds, uint256 depositAmount, address referrer) returns (address)",
-  "function quoteInsuranceSkim(uint256 principal, uint256 feeRateBps) view returns (uint256)",
-  "function quoteProtocolFee(uint256 principal, uint256 feeRateBps) view returns (uint256)",
+  // aprBps is ANNUALISED — 300 means 3% per year, accruing pro-rata. The
+  // quotes take duration because interest, and therefore the skim and the
+  // protocol fee that are percentages of it, all depend on the term.
+  "function deployVault(address asset, address borrower, uint256 principal, uint256 aprBps, uint256 duration, bool useSeconds, uint256 depositAmount, address referrer) returns (address)",
+  "function quoteFullTermFee(uint256 principal, uint256 aprBps, uint256 duration, bool useSeconds) view returns (uint256)",
+  "function quoteInsuranceSkim(uint256 principal, uint256 aprBps, uint256 duration, bool useSeconds) view returns (uint256)",
+  "function quoteProtocolFee(uint256 principal, uint256 aprBps, uint256 duration, bool useSeconds) view returns (uint256)",
+  "function minimumFeeBps() view returns (uint256)",
+  "function setMinimumFeeBps(uint256 newBps) external",
   "function insuranceSkimRateBps() view returns (uint256)",
   "function protocolFeeRateBps() view returns (uint256)",
   "function referrerShareBps() view returns (uint256)",
@@ -54,7 +60,8 @@ export const VAULT_FACTORY_ABI = parseAbi([
   "function getVaultsByLender(address lender) view returns (address[])",
   "function totalVaults() view returns (uint256)",
   "function allVaults(uint256 index) view returns (address)",
-  "event VaultDeployed(address indexed vault, address indexed lender, address indexed borrower, address asset, uint256 principal, uint256 depositRequired, uint256 feeRateBps, uint256 insuranceSkim, uint256 deadline)",
+  "event VaultDeployed(address indexed vault, address indexed lender, address indexed borrower, address asset, uint256 principal, uint256 depositRequired, uint256 aprBps, uint256 insuranceSkim, uint256 deadline)",
+  "event MinimumFeeUpdated(uint256 previousBps, uint256 newBps)",
   "event TreasuryUpdated(address indexed previousTreasury, address indexed newTreasury)",
   "event ProtocolFeeRateUpdated(uint256 previousBps, uint256 newBps)",
 ]);
@@ -66,7 +73,14 @@ export const VAULT_ABI = parseAbi([
   "function borrower() view returns (address)",
   "function principal() view returns (uint256)",
   "function deposit() view returns (uint256)",
-  "function feeRateBps() view returns (uint256)",
+  // Annualised rate, plus the term it applies over. accruedFee() is what the
+  // borrower actually owes right now; fullTermFee() is the maximum.
+  "function aprBps() view returns (uint256)",
+  "function originatedAt() view returns (uint256)",
+  "function term() view returns (uint256)",
+  "function minimumFeeBps() view returns (uint256)",
+  "function accruedFee() view returns (uint256)",
+  "function fullTermFee() view returns (uint256)",
   "function deadline() view returns (uint256)",
   "function isSettled() view returns (bool)",
   "function requiredDeposit() view returns (uint256)",

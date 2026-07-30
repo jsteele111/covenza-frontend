@@ -111,16 +111,36 @@ export function LenderTab() {
   // --- Amount parsing ---
   const parsedPrincipal = tryParseUnits(principal, decimals);
   const parsedDeposit = tryParseUnits(depositRequired, decimals);
-  const feeRateBps = feeRatePercent ? Math.round(parseFloat(feeRatePercent) * 100) : NaN;
-  const feeRateValid = Number.isFinite(feeRateBps) && feeRateBps > 0;
+  // The rate the lender enters is now an ANNUAL rate. 3% means 3% per year,
+  // accruing pro-rata — so the absolute interest depends on the term, and
+  // every quote below has to be told the duration.
+  const aprBps = feeRatePercent ? Math.round(parseFloat(feeRatePercent) * 100) : NaN;
+  const aprValid = Number.isFinite(aprBps) && aprBps > 0;
   const durationBigInt = tryBigInt(durationValue);
+
+  const quoteArgs = [
+    parsedPrincipal ?? 0n,
+    BigInt(aprValid ? aprBps : 0),
+    durationBigInt ?? 0n,
+    shortMode,
+  ];
+  const quotesReady = Boolean(parsedPrincipal) && aprValid && durationBigInt !== undefined && durationBigInt > 0n;
+
+  // What the loan earns if it runs to term. The lender's headline number.
+  const { data: fullTermFee } = useReadContract({
+    address: contracts.vaultFactory,
+    abi: factoryAbi,
+    functionName: "quoteFullTermFee",
+    args: quoteArgs,
+    query: { enabled: quotesReady },
+  });
 
   const { data: insuranceSkim } = useReadContract({
     address: contracts.vaultFactory,
     abi: factoryAbi,
     functionName: "quoteInsuranceSkim",
-    args: [parsedPrincipal ?? 0n, BigInt(feeRateValid ? feeRateBps : 0)],
-    query: { enabled: Boolean(parsedPrincipal) && feeRateValid },
+    args: quoteArgs,
+    query: { enabled: quotesReady },
   });
 
   const requiredApproval =
@@ -134,8 +154,8 @@ export function LenderTab() {
     address: contracts.vaultFactory,
     abi: factoryAbi,
     functionName: "quoteProtocolFee",
-    args: [parsedPrincipal ?? 0n, BigInt(feeRateValid ? feeRateBps : 0)],
-    query: { enabled: Boolean(parsedPrincipal) && feeRateValid && registryReady },
+    args: quoteArgs,
+    query: { enabled: quotesReady && registryReady },
   });
 
   const { data: allowance, refetch: refetchAllowance } = useReadContract({
@@ -194,7 +214,7 @@ export function LenderTab() {
     !selectedAsset ||
     !borrowerIsValidAddress ||
     isVerified === false ||
-    !feeRateValid ||
+    !aprValid ||
     parsedPrincipal === undefined ||
     parsedDeposit === undefined ||
     durationBigInt === undefined;
@@ -205,8 +225,8 @@ export function LenderTab() {
     ? "Enter a valid borrower address."
     : isVerified === false
     ? "This address is not KYC verified."
-    : !feeRateValid
-    ? "Enter a valid fee rate greater than zero."
+    : !aprValid
+    ? "Enter a valid annual rate greater than zero."
     : parsedPrincipal === undefined
     ? "Enter a valid principal amount."
     : parsedDeposit === undefined
@@ -247,7 +267,7 @@ export function LenderTab() {
           selectedAsset,
           borrower,
           parsedPrincipal,
-          BigInt(feeRateBps),
+          BigInt(aprBps),
           durationBigInt,
           shortMode,
           parsedDeposit,
@@ -313,7 +333,7 @@ export function LenderTab() {
         )}
 
         <Row2>
-          <Field label="Fee rate (%)">
+          <Field label="Interest rate (% per year)">
             <input value={feeRatePercent} onChange={(e) => setFeeRatePercent(e.target.value)} style={inputStyle} />
           </Field>
           <Field label={shortMode ? "Duration (seconds)" : "Duration (days)"}>
@@ -322,13 +342,31 @@ export function LenderTab() {
         </Row2>
 
         <p style={{ fontSize: 11, color: "var(--parch-dim)", margin: "-8px 0 12px" }}>
-          Fee is fixed at origination and charged in full — the borrower pays the same fee whether
-          they close early or hold to the deadline.
+          The rate is <strong>annual</strong>, and interest accrues on time actually
+          elapsed — a borrower who closes early owes less.
+          {fullTermFee !== undefined && fullTermFee > 0n && (
+            <> Held to the deadline this loan earns {formatTokenAmount(fullTermFee, decimals)}{" "}
+            {selectedSymbol}, which is the maximum.</>
+          )}
           {insuranceSkim !== undefined && insuranceSkim > 0n && (
-            <> An additional {formatTokenAmount(insuranceSkim, decimals)} {selectedSymbol} insurance skim is
-            pulled from you at origination, funding the shared pool for this asset.</>
+            <> An insurance skim of {formatTokenAmount(insuranceSkim, decimals)} {selectedSymbol} is
+            pulled from you at origination, priced on the full term so the pool is funded for
+            maximum exposure before any loss can occur.</>
           )}
         </p>
+
+        {/* Time-weighting interest shrinks the buffer that absorbs a loss before
+            the deposit is touched. On a very short loan that buffer is close to
+            nothing, which is a real change in risk and belongs on screen rather
+            than in a comment. */}
+        {fullTermFee !== undefined && parsedPrincipal !== undefined && parsedPrincipal > 0n &&
+         fullTermFee * 200n < parsedPrincipal && (
+          <p style={{ fontSize: 11, color: "var(--brick)", margin: "-8px 0 12px", lineHeight: 1.5 }}>
+            Short term relative to the rate: total interest is under 0.5% of principal, so it
+            absorbs very little loss before the borrower's deposit is drawn on. Consider a larger
+            deposit for loans this brief.
+          </p>
+        )}
 
         {protocolFee !== undefined && protocolFee > 0n && (
           <p style={{ fontSize: 11, color: "var(--parch-dim)", margin: "-8px 0 12px" }}>
