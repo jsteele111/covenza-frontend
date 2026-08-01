@@ -57,6 +57,30 @@ export const VAULT_FACTORY_ABI = parseAbi([
   "function quoteProtocolFee(uint256 principal, uint256 aprBps, uint256 duration, bool useSeconds) view returns (uint256)",
   "function minimumFeeBps() view returns (uint256)",
   "function setMinimumFeeBps(uint256 newBps) external",
+
+  // --- Mandates ---
+  //
+  // The lender publishes terms and a PRICING FORMULA; the borrower picks a
+  // point on it. quoteMandateFillable returns min(allowance, balance, offer)
+  // rather than the offered size — an allowance can be revoked for free, so
+  // displaying intent rather than capacity produces a book of offers that
+  // cannot be taken.
+  "function publishMandate((address asset, uint256 minPrincipal, uint256 maxPrincipal, uint256 minTermSeconds, uint256 maxTermSeconds, uint256 validForSeconds, uint8 maxTier, address permittedBorrower, uint256 baseAprBps, uint256 termPremiumBpsPerDay, uint256 depositCreditBpsPerPoint, uint256 minDepositBps, uint256 minAprBps) terms) returns (uint256)",
+  "function cancelMandate(uint256 id) external",
+  "function cancelAllMandates() external",
+  "function fillMandate(uint256 id, uint256 principal, uint256 duration, bool useSeconds, uint256 deposit) returns (address)",
+  "function mandate(uint256 id) view returns ((address lender, address asset, uint256 minPrincipal, uint256 maxPrincipal, uint256 minTermSeconds, uint256 maxTermSeconds, uint256 expiry, uint256 nonce, uint8 maxTier, bool cancelled, address permittedBorrower, uint256 baseAprBps, uint256 termPremiumBpsPerDay, uint256 depositCreditBpsPerPoint, uint256 minDepositBps, uint256 minAprBps))",
+  "function totalMandates() view returns (uint256)",
+  "function isMandateLive(uint256 id) view returns (bool)",
+  "function quoteMandateApr(uint256 id, uint256 termSeconds, uint256 depositBps) view returns (uint256)",
+  "function quoteMandateFillable(uint256 id) view returns (uint256)",
+  "function quoteFillCost(uint256 id, uint256 principal, uint256 duration, bool useSeconds, uint256 deposit) view returns (uint256 depositOwed, uint256 premiumOwed)",
+  "function maxMandateDuration() view returns (uint256)",
+  "function lenderNonce(address lender) view returns (uint256)",
+  "event MandatePublished(uint256 indexed id, address indexed lender, address indexed asset, uint256 maxPrincipal, uint256 expiry, uint8 maxTier)",
+  "event MandateCancelled(uint256 indexed id, address indexed lender)",
+  "event MandateFilled(uint256 indexed id, address indexed lender, address indexed borrower, address vault, uint256 principal, uint256 aprBps)",
+  "event AllMandatesCancelled(address indexed lender, uint256 newNonce)",
   "function insuranceSkimRateBps() view returns (uint256)",
   "function protocolFeeRateBps() view returns (uint256)",
   "function referrerShareBps() view returns (uint256)",

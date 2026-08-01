@@ -4,6 +4,7 @@ import { parseUnits, isAddress } from "viem";
 import { KYC_REGISTRY_ABI, VAULT_FACTORY_ABI, ASSET_REGISTRY_ABI, ERC20_ABI } from "../config/abis.js";
 import { getContractsForChain, isPlaceholder, symbolForToken } from "../config/contracts.js";
 import { TIER_LABELS } from "../hooks/useVaultData.js";
+import { MandatePanel } from "./MandatePanel.jsx";
 import { useLatestVault } from "../hooks/useLatestVault.js";
 import { useVaultData } from "../hooks/useVaultData.js";
 import { recommendedDeposit } from "../utils/deposit.js";
@@ -72,6 +73,11 @@ export function LenderTab() {
   const [durationValue, setDurationValue] = useState("7");
   const [shortMode, setShortMode] = useState(false);
   const [pendingAction, setPendingAction] = useState(null); // "approve" | "deploy" | null
+
+  // Mandates are the default because they are the general case: publish terms
+  // and let any qualifying borrower take them. Direct origination is the
+  // narrower one — it requires already knowing the counterparty's address.
+  const [mode, setMode] = useState("mandate"); // "mandate" | "direct"
 
   const publicClient = usePublicClient();
 
@@ -324,12 +330,46 @@ export function LenderTab() {
 
   return (
     <div>
-      <div style={cardStyle}>
-        <p style={{ fontSize: 11, color: "var(--parch-dim)", margin: "0 0 16px" }}>Originate a vault</p>
+      <div style={{ display: "inline-flex", background: "var(--panel)", border: "1px solid var(--hairline)", borderRadius: 8, padding: 3, marginBottom: 16 }}>
+        {[
+          ["mandate", "Publish terms"],
+          ["direct", "Originate directly"],
+        ].map(([key, label]) => (
+          <button
+            key={key}
+            type="button"
+            onClick={() => setMode(key)}
+            style={{
+              border: "none", borderRadius: 6, padding: "7px 16px", fontSize: 12, cursor: "pointer",
+              background: mode === key ? "var(--brass)" : "transparent",
+              color: mode === key ? "#1C1C1A" : "var(--parch-dim)",
+              fontWeight: mode === key ? 600 : 400,
+            }}
+          >
+            {label}
+          </button>
+        ))}
+      </div>
 
+      <div style={{ marginBottom: 12 }}>
         <Field label="Asset">
           <AssetSwitcher assets={assets} chainId={chainId} value={selectedAsset} onChange={setSelectedAsset} />
         </Field>
+      </div>
+
+      {mode === "mandate" ? (
+        <MandatePanel
+          selectedAsset={selectedAsset}
+          selectedSymbol={selectedSymbol}
+          decimals={decimals}
+        />
+      ) : (
+      <div style={cardStyle}>
+        <p style={{ fontSize: 11, color: "var(--parch-dim)", margin: "0 0 16px" }}>
+          Originate a vault for a borrower you already know. Terms are fixed here rather
+          than priced off a surface, and the borrower cannot take them without your
+          transaction.
+        </p>
 
         <Field label="Borrower address">
           <input
@@ -495,6 +535,7 @@ export function LenderTab() {
           </p>
         )}
       </div>
+      )}
 
       {latestVaultAddress && (
         <div style={{ marginTop: 20 }}>

@@ -8,6 +8,7 @@ import { useVaultData } from "../hooks/useVaultData.js";
 import { useVaultAction } from "../hooks/useVaultAction.js";
 import { useHeldAssets } from "../hooks/useHeldAssets.js";
 import { VaultStatement } from "./VaultStatement.jsx";
+import { MandateBoard } from "./MandateBoard.jsx";
 import { ActionButton } from "./ActionButton.jsx";
 import { KycGate } from "./KycGate.jsx";
 import { formatTokenAmount } from "../utils/format.js";
@@ -189,8 +190,24 @@ export function BorrowerTab() {
     return <KycGate address={address} />;
   }
 
+  // No vault yet is no longer a dead end. Before mandates a borrower had to
+  // find a lender and ask them to originate; now the terms are published and
+  // the borrower fills them.
   if (!vault) {
-    return <EmptyState message="No vault found for this wallet yet. Ask your lender to originate one." />;
+    return (
+      <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+        <div>
+          <p style={{ fontSize: 13, fontWeight: 600, color: "var(--parch)", margin: "0 0 4px" }}>
+            Available mandates
+          </p>
+          <p style={{ fontSize: 11, color: "var(--parch-dim)", margin: 0, lineHeight: 1.5 }}>
+            Lenders publish terms they will accept. Pick one, choose your size, term and
+            deposit, and the loan opens in a single transaction.
+          </p>
+        </div>
+        <MandateBoard />
+      </div>
+    );
   }
 
   const isEarly = !vault.isExpired;
