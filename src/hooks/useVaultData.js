@@ -12,6 +12,9 @@ const assetRegistryAbi = ASSET_REGISTRY_ABI;
 // Yearn, or anything else compliant, and the UI cannot tell which.
 export const VENUE_LABELS = { 0: "None", 1: "Aave V3", 2: "ERC-4626 vault" };
 
+// Mirrors AssetRegistry.RiskTier.
+export const TIER_LABELS = { 0: "Blue chip", 1: "Standard", 2: "Speculative" };
+
 /**
  * Reads every field the UI needs for a single vault — rewritten for v2's
  * multi-asset design (Group E4). Two changes from the v1 version this
@@ -64,6 +67,8 @@ export function useVaultData(vaultAddress) {
       { address: vaultAddress, abi: vaultAbi, functionName: "accruedFee" },
       { address: vaultAddress, abi: vaultAbi, functionName: "fullTermFee" },
       { address: vaultAddress, abi: vaultAbi, functionName: "term" },
+      { address: vaultAddress, abi: vaultAbi, functionName: "maxTier" },
+      { address: vaultAddress, abi: vaultAbi, functionName: "insurancePremium" },
     ],
     query: { enabled, refetchInterval: 10000 },
   });
@@ -119,6 +124,8 @@ export function useVaultData(vaultAddress) {
     accruedFeeRaw,
     fullTermFeeRaw,
     termRaw,
+    maxTierRaw,
+    insurancePremiumRaw,
   ] = data.map((d) => d.result);
 
   // Interest owed RIGHT NOW. Previously this was computed here as
@@ -157,6 +164,16 @@ export function useVaultData(vaultAddress) {
       fee,
       fullTermFee: fullTermFeeRaw ?? undefined,
       term: termRaw ?? undefined,
+
+      // --- Risk mandate and insurance ---
+      maxTier: maxTierRaw != null ? Number(maxTierRaw) : undefined,
+      maxTierLabel: TIER_LABELS[Number(maxTierRaw ?? 0)] || "—",
+
+      // payDeposit pulls deposit AND premium in one transfer, so any approval
+      // the UI builds has to cover both or the call reverts.
+      insurancePremium: insurancePremiumRaw ?? 0n,
+      depositPlusPremium:
+        requiredDeposit != null ? requiredDeposit + (insurancePremiumRaw ?? 0n) : undefined,
 
       deadline,
       isSettled,

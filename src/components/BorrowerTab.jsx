@@ -197,8 +197,15 @@ export function BorrowerTab() {
   const canAct = !vault.isSettled && !vault.isExpired;
 
   // --- Deposit ---
+  //
+  // payDeposit pulls the deposit AND the insurance premium in a single
+  // transfer, so an approval covering only the deposit reverts. The premium
+  // funds the pool upfront rather than accruing to settlement, because a loan
+  // ending in a loss might otherwise never pay it.
+  const depositTotal = vault.depositPlusPremium ?? vault.requiredDeposit;
+
   const needsDepositApproval =
-    !vault.depositPaid && (depositAllowance === undefined || depositAllowance < vault.requiredDeposit);
+    !vault.depositPaid && (depositAllowance === undefined || depositAllowance < depositTotal);
   const depositDisabled = vault.isSettled || vault.depositPaid || vault.isExpired;
   const depositReason = vault.isSettled
     ? "Vault already settled."
@@ -216,7 +223,7 @@ export function BorrowerTab() {
         address: vault.asset,
         abi: erc20Abi,
         functionName: "approve",
-        args: [latestVaultAddress, vault.requiredDeposit],
+        args: [latestVaultAddress, depositTotal],
         maxFeePerGas: fees.maxFeePerGas * 2n,
         maxPriorityFeePerGas: fees.maxPriorityFeePerGas,
       });
@@ -293,7 +300,33 @@ export function BorrowerTab() {
 
       {/* --- Deposit --- */}
       <div style={cardStyle}>
-        <p style={{ fontSize: 11, color: "var(--parch-dim)", margin: "0 0 12px" }}>Deposit</p>
+        <p style={{ fontSize: 11, color: "var(--parch-dim)", margin: "0 0 4px" }}>Deposit</p>
+
+        {/* Two amounts leave the borrower's wallet in one transaction, and only
+            one of them comes back. Showing a single total would misrepresent
+            what is at stake versus what is spent. */}
+        {!vault.depositPaid && (
+          <div style={{ display: "flex", flexDirection: "column", gap: 4, margin: "0 0 12px" }}>
+            <CostRow
+              label="Deposit — returned at settlement, less any loss"
+              value={`${formatTokenAmount(vault.requiredDeposit, vault.decimals)} ${vault.symbol}`}
+            />
+            {vault.insurancePremium > 0n && (
+              <>
+                <CostRow
+                  label="Insurance premium — not refunded"
+                  value={`${formatTokenAmount(vault.insurancePremium, vault.decimals)} ${vault.symbol}`}
+                />
+                <CostRow
+                  label="Total payable now"
+                  value={`${formatTokenAmount(depositTotal, vault.decimals)} ${vault.symbol}`}
+                  emphasis
+                />
+              </>
+            )}
+          </div>
+        )}
+
         <ActionButton
           label={needsDepositApproval ? `Approve ${vault.symbol}` : "Pay deposit"}
           primary={!depositDisabled}
@@ -555,6 +588,28 @@ function AssetSwitcher({ assets, chainId, value, onChange }) {
           </button>
         );
       })}
+    </div>
+  );
+}
+
+/**
+ * One line of the borrower's up-front cost.
+ *
+ * Deposit and premium are shown separately because only one of them comes
+ * back. A single combined figure would tell the borrower what leaves their
+ * wallet while hiding which part is at stake and which part is simply spent.
+ */
+function CostRow({ label, value, emphasis }) {
+  return (
+    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 12 }}>
+      <span style={{ fontSize: 11, color: "var(--parch-dim)" }}>{label}</span>
+      <span
+        className="mono"
+        style={{ fontSize: 12, color: emphasis ? "var(--parch)" : "var(--parch-dim)",
+                 fontWeight: emphasis ? 600 : 400 }}
+      >
+        {value}
+      </span>
     </div>
   );
 }

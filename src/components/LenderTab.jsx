@@ -3,6 +3,7 @@ import { useAccount, useChainId, useReadContract, useWriteContract, useWaitForTr
 import { parseUnits, isAddress } from "viem";
 import { KYC_REGISTRY_ABI, VAULT_FACTORY_ABI, ASSET_REGISTRY_ABI, ERC20_ABI } from "../config/abis.js";
 import { getContractsForChain, isPlaceholder, symbolForToken } from "../config/contracts.js";
+import { TIER_LABELS } from "../hooks/useVaultData.js";
 import { useLatestVault } from "../hooks/useLatestVault.js";
 import { useVaultData } from "../hooks/useVaultData.js";
 import { recommendedDeposit } from "../utils/deposit.js";
@@ -118,6 +119,12 @@ export function LenderTab() {
   const aprValid = Number.isFinite(aprBps) && aprBps > 0;
   const durationBigInt = tryBigInt(durationValue);
 
+  // The risk ceiling. This is the lender's only control over what the borrower
+  // does with the money AFTER terms are agreed — without it, a lender pricing
+  // for WETH exposure can end up backing a memecoin position they never had a
+  // chance to price.
+  const [maxTier, setMaxTier] = useState(0);
+
   const quoteArgs = [
     parsedPrincipal ?? 0n,
     BigInt(aprValid ? aprBps : 0),
@@ -142,6 +149,31 @@ export function LenderTab() {
     args: quoteArgs,
     query: { enabled: quotesReady },
   });
+
+  // Deposit floor rises with the SQUARE ROOT of term and with the tier's
+  // assumed volatility, so it moves as the lender adjusts either. Read live
+  // rather than recomputed here — the contract is the authority and getting
+  // the fixed-point arithmetic subtly different would be worse than useless.
+  const { data: minDeposit } = useReadContract({
+    address: contracts.vaultFactory,
+    abi: factoryAbi,
+    functionName: "quoteMinimumDeposit",
+    args: [parsedPrincipal ?? 0n, maxTier, durationBigInt ?? 0n, shortMode],
+    query: {
+      enabled: Boolean(parsedPrincipal) && durationBigInt !== undefined && durationBigInt > 0n,
+    },
+  });
+
+  const { data: tierCfg } = useReadContract({
+    address: contracts.assetRegistry,
+    abi: assetRegistryAbi,
+    functionName: "tierConfig",
+    args: [maxTier],
+    query: { enabled: registryReady },
+  });
+
+  const depositBelowFloor =
+    parsedDeposit !== undefined && minDeposit !== undefined && parsedDeposit < minDeposit;
 
   const requiredApproval =
     parsedPrincipal !== undefined ? parsedPrincipal + (insuranceSkim || 0n) : undefined;
@@ -215,6 +247,7 @@ export function LenderTab() {
     !borrowerIsValidAddress ||
     isVerified === false ||
     !aprValid ||
+    depositBelowFloor ||
     parsedPrincipal === undefined ||
     parsedDeposit === undefined ||
     durationBigInt === undefined;
@@ -227,6 +260,8 @@ export function LenderTab() {
     ? "This address is not KYC verified."
     : !aprValid
     ? "Enter a valid annual rate greater than zero."
+    : depositBelowFloor
+    ? "Deposit is below the required floor for this risk tier and term."
     : parsedPrincipal === undefined
     ? "Enter a valid principal amount."
     : parsedDeposit === undefined
@@ -262,7 +297,10 @@ export function LenderTab() {
       writeContract({
         address: contracts.vaultFactory,
         abi: factoryAbi,
-        functionName: "deployVault",
+        // WithTier, not plain deployVault: the plain form defaults the ceiling
+        // to Speculative, which preserves pre-tier behaviour but grants the
+        // lender no protection at all.
+        functionName: "deployVaultWithTier",
         args: [
           selectedAsset,
           borrower,
@@ -272,6 +310,7 @@ export function LenderTab() {
           shortMode,
           parsedDeposit,
           ZERO_ADDRESS,          // referrer — direct origination, no integrator
+          maxTier,
         ],
         maxFeePerGas: fees.maxFeePerGas * 2n,
         maxPriorityFeePerGas: fees.maxPriorityFeePerGas,
@@ -340,6 +379,53 @@ export function LenderTab() {
             <input value={durationValue} onChange={(e) => setDurationValue(e.target.value)} style={inputStyle} />
           </Field>
         </Row2>
+
+        <Field label="Risk ceiling — what the borrower may swap into">
+          <div style={{ display: "inline-flex", background: "var(--ink)", border: "1px solid var(--hairline)", borderRadius: 8, padding: 3 }}>
+            {[0, 1, 2].map((t) => {
+              const active = maxTier === t;
+              return (
+                <button
+                  key={t}
+                  type="button"
+                  onClick={() => setMaxTier(t)}
+                  style={{
+                    border: "none", borderRadius: 6, padding: "6px 14px", fontSize: 12, cursor: "pointer",
+                    background: active ? "var(--brass)" : "transparent",
+                    color: active ? "#1C1C1A" : "var(--parch-dim)",
+                    fontWeight: active ? 600 : 400,
+                  }}
+                >
+                  {TIER_LABELS[t]}
+                </button>
+              );
+            })}
+          </div>
+        </Field>
+
+        {/* The deposit floor is the actual risk control, so it is shown as a
+            live figure rather than left to be discovered on a revert. Moving a
+            30-day WETH loan from a 20% to a 30% deposit changes expected loss
+            by a factor of six — no interest rate does that. */}
+        {minDeposit !== undefined && minDeposit > 0n && (
+          <p style={{
+            fontSize: 11,
+            color: depositBelowFloor ? "var(--brick)" : "var(--parch-dim)",
+            margin: "-4px 0 12px",
+            lineHeight: 1.5,
+          }}>
+            Minimum deposit for this tier and term:{" "}
+            <strong>{formatTokenAmount(minDeposit, decimals)} {selectedSymbol}</strong>
+            {parsedPrincipal !== undefined && parsedPrincipal > 0n && (
+              <> ({(Number(minDeposit * 10000n / parsedPrincipal) / 100).toFixed(1)}% of principal)</>
+            )}
+            {depositBelowFloor && <> — the deposit entered is below this and will be rejected.</>}
+            {tierCfg && tierCfg[0] > 0n && (
+              <> Assumes {Number(tierCfg[0]) / 100}% annualised volatility; the floor rises with
+              the square root of term.</>
+            )}
+          </p>
+        )}
 
         <p style={{ fontSize: 11, color: "var(--parch-dim)", margin: "-8px 0 12px" }}>
           The rate is <strong>annual</strong>, and interest accrues on time actually

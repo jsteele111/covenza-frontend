@@ -6,7 +6,7 @@ import { getContractsForChain, isPlaceholder, symbolForToken } from "../config/c
 import { shortAddress, formatTokenAmount } from "../utils/format.js";
 import { useSettledVaultsWithLoss } from "../hooks/useSettledVaultsWithLoss.js";
 import { useAssetPreflight } from "../hooks/useAssetPreflight.js";
-import { VENUE_LABELS } from "../hooks/useVaultData.js";
+import { VENUE_LABELS, TIER_LABELS } from "../hooks/useVaultData.js";
 import { ActionButton } from "./ActionButton.jsx";
 
 // abis.js already exports pre-parsed ABIs — do not re-wrap in parseAbi().
@@ -21,6 +21,11 @@ const VENUE_AAVE = 1;
 const VENUE_4626 = 2;
 
 const ZERO_ADDRESS = "0x0000000000000000000000000000000000000000";
+
+// Colour carries the ordering so risk reads at a glance rather than needing
+// the label parsed. Labels themselves come from useVaultData, which is the
+// single place AssetRegistry.RiskTier is mirrored.
+const TIER_COLOURS = { 0: "var(--brass)", 1: "var(--slate)", 2: "var(--brick)" };
 
 const verifiedEvent = parseAbiItem(
   "event AddressVerified(address indexed wallet, uint256 timestamp, bool viaSignature)"
@@ -362,10 +367,21 @@ function AssetWhitelistPanel() {
     query: { enabled: addresses.length > 0 },
   });
 
+  const { data: tierResults, refetch: refetchTiers } = useReadContracts({
+    contracts: addresses.map((addr) => ({
+      address: contracts.assetRegistry,
+      abi: assetRegistryAbi,
+      functionName: "tierOf",
+      args: [addr],
+    })),
+    query: { enabled: addresses.length > 0 },
+  });
+
   const assets = addresses.map((addr, i) => ({
     address: addr,
     symbol: symbolForToken(chainId, addr),
     whitelisted: whitelistResults?.[i]?.result || false,
+    tier: tierResults?.[i]?.result != null ? Number(tierResults[i].result) : 0,
   }));
 
   useEffect(() => {
@@ -373,6 +389,7 @@ function AssetWhitelistPanel() {
       refetchTotal();
       refetchAddresses();
       refetchWhitelist();
+      refetchTiers();
       setNewAsset("");
       setNewAToken("");
       setNewVenue(VENUE_NONE);
@@ -436,6 +453,23 @@ function AssetWhitelistPanel() {
           newVenue === VENUE_4626 ? newVenueAddress : ZERO_ADDRESS,
           BigInt(Math.round(Number(newGraceHours || 0) * 3600)),
         ],
+        maxFeePerGas: fees.maxFeePerGas * 2n,
+        maxPriorityFeePerGas: fees.maxPriorityFeePerGas,
+      });
+    } catch {
+      setPendingAsset(null);
+    }
+  }
+
+  async function setAssetTier(assetAddress, tier) {
+    setPendingAsset(assetAddress);
+    try {
+      const fees = await publicClient.estimateFeesPerGas();
+      writeContract({
+        address: contracts.assetRegistry,
+        abi: assetRegistryAbi,
+        functionName: "setTier",
+        args: [assetAddress, tier],
         maxFeePerGas: fees.maxFeePerGas * 2n,
         maxPriorityFeePerGas: fees.maxPriorityFeePerGas,
       });
@@ -549,7 +583,35 @@ function AssetWhitelistPanel() {
             <div key={a.address} style={{ ...cardStyle, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
               <div>
                 <p className="mono" style={{ fontSize: 13, color: "var(--parch)", margin: "0 0 4px" }}>{a.symbol}</p>
-                <p className="mono" style={{ fontSize: 11, color: "var(--parch-dim)", margin: 0 }}>{shortAddress(a.address)}</p>
+                <p className="mono" style={{ fontSize: 11, color: "var(--parch-dim)", margin: "0 0 6px" }}>{shortAddress(a.address)}</p>
+
+                {/* Re-tagging takes effect on the NEXT swap of every live vault:
+                    the ceiling is snapshotted per vault, but tierOf is read
+                    fresh. So discovering an asset is riskier than thought
+                    closes it off immediately, without stranding anyone already
+                    holding it. */}
+                <div style={{ display: "inline-flex", background: "var(--ink)", border: "1px solid var(--hairline)", borderRadius: 6, padding: 2 }}>
+                  {[0, 1, 2].map((t) => {
+                    const active = a.tier === t;
+                    return (
+                      <button
+                        key={t}
+                        type="button"
+                        disabled={busy}
+                        onClick={() => setAssetTier(a.address, t)}
+                        style={{
+                          border: "none", borderRadius: 4, padding: "3px 9px", fontSize: 10,
+                          cursor: busy ? "default" : "pointer",
+                          background: active ? TIER_COLOURS[t] : "transparent",
+                          color: active ? "#1C1C1A" : "var(--parch-dim)",
+                          fontWeight: active ? 600 : 400,
+                        }}
+                      >
+                        {TIER_LABELS[t]}
+                      </button>
+                    );
+                  })}
+                </div>
               </div>
               <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
                 <span

@@ -47,6 +47,11 @@ export const VAULT_FACTORY_ABI = parseAbi([
   // quotes take duration because interest, and therefore the skim and the
   // protocol fee that are percentages of it, all depend on the term.
   "function deployVault(address asset, address borrower, uint256 principal, uint256 aprBps, uint256 duration, bool useSeconds, uint256 depositAmount, address referrer) returns (address)",
+  // The form a lender should use: maxTier is the risk ceiling the borrower
+  // may swap into. Plain deployVault defaults it to Speculative, which
+  // preserves pre-tier behaviour but grants no protection.
+  "function deployVaultWithTier(address asset, address borrower, uint256 principal, uint256 aprBps, uint256 duration, bool useSeconds, uint256 depositAmount, address referrer, uint8 maxTier) returns (address)",
+  "function quoteMinimumDeposit(uint256 principal, uint8 maxTier, uint256 duration, bool useSeconds) view returns (uint256)",
   "function quoteFullTermFee(uint256 principal, uint256 aprBps, uint256 duration, bool useSeconds) view returns (uint256)",
   "function quoteInsuranceSkim(uint256 principal, uint256 aprBps, uint256 duration, bool useSeconds) view returns (uint256)",
   "function quoteProtocolFee(uint256 principal, uint256 aprBps, uint256 duration, bool useSeconds) view returns (uint256)",
@@ -81,6 +86,14 @@ export const VAULT_ABI = parseAbi([
   "function minimumFeeBps() view returns (uint256)",
   "function accruedFee() view returns (uint256)",
   "function fullTermFee() view returns (uint256)",
+
+  // Risk ceiling snapshotted at origination, and the insurance premium the
+  // BORROWER pays alongside their deposit — payDeposit pulls both together.
+  "function maxTier() view returns (uint8)",
+  "function insurancePremium() view returns (uint256)",
+  "function cancel() external",
+  "event InsurancePremiumPaid(address indexed borrower, uint256 amount)",
+  "event Cancelled(address indexed lender, uint256 principalReturned, uint256 timestamp)",
   "function deadline() view returns (uint256)",
   "function isSettled() view returns (bool)",
   "function requiredDeposit() view returns (uint256)",
@@ -155,6 +168,25 @@ export const ASSET_REGISTRY_ABI = parseAbi([
   // 0 = None, 1 = Aave, 2 = ERC4626.
   "function venueOf(address asset) view returns (uint8 venue, address venueAddress)",
   "function gracePeriodOf(address asset) view returns (uint256)",
+
+  // Risk tiers. RiskTier is an enum, ABI-encoded as uint8:
+  // 0 = BlueChip, 1 = Standard, 2 = Speculative.
+  "function tierOf(address asset) view returns (uint8)",
+  "function tierConfig(uint8 tier) view returns (uint256 assumedVolBps, uint256 minDepositBps, uint256 maxTermSeconds, uint256 maxExposureBps, uint256 insurancePremiumBps)",
+  "function minimumDepositBpsForTier(uint8 tier, uint256 termSeconds) view returns (uint256)",
+  "function minimumDepositBps(address asset, uint256 termSeconds) view returns (uint256)",
+  "function maxTermForTier(uint8 tier) view returns (uint256)",
+  "function maxTermFor(address asset) view returns (uint256)",
+  "function maxExposureBpsFor(address asset) view returns (uint256)",
+  "function insurancePremiumBpsForTier(uint8 tier) view returns (uint256)",
+  "function depositCoeffBps() view returns (uint256)",
+  "function maxEntryImpactBps() view returns (uint256)",
+  "function setTier(address asset, uint8 tier) external",
+  "function setTierConfig(uint8 tier, uint256 assumedVolBps, uint256 minDepositBps, uint256 maxTermSeconds, uint256 maxExposureBps, uint256 insurancePremiumBps) external",
+  "function setDepositCoeffBps(uint256 newBps) external",
+  "function setMaxEntryImpactBps(uint256 newBps) external",
+  "event TierUpdated(address indexed asset, uint8 tier)",
+  "event TierConfigUpdated(uint8 indexed tier, uint256 assumedVolBps, uint256 minDepositBps, uint256 maxTermSeconds, uint256 maxExposureBps, uint256 insurancePremiumBps)",
   "function addAsset(address asset, address aToken) external",
   "function addAssetWithVenue(address asset, address aToken, uint8 venue, address venueAddress, uint256 gracePeriod) external",
   "function setVenue(address asset, uint8 venue, address venueAddress) external",
