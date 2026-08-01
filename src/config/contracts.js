@@ -36,31 +36,36 @@ const CONTRACTS_BY_CHAIN = {
   // only minutes of observation history and a real chain cannot be
   // fast-forwarded.
   // -------------------------------------------------------------------
+  // WARNING: Robinhood testnet wipes CONTRACT STATE while preserving account
+  // balances and block height. Every address below has already been lost once
+  // and redeployed. Verify before any demo — a stale address returns empty
+  // data rather than failing loudly, because calls to codeless addresses
+  // succeed with no returndata.
   46630: {
-    kycRegistry:   "0x69eBB2a181dC2bbB418792F4a3cFcc7aFA84Eb61",
-    assetRegistry: "0xAE606Fe68f50cbf01De396DF5287460BE458AFd1",
-    insurancePool: "0x98e282B343CAF567DEA278c60a7Eb38705F45961",
-    vaultFactory:  "0xA54443f299B9a02c2A4900e8BA2BdBfc04A1aca5",
+    kycRegistry:   "0x93e1c4F4b0cD3F6A3feB7B6C056466535881a38e",
+    assetRegistry: "0x71FFe1CA1D087c2b72F661CB7F75172ce25badfd",
+    insurancePool: "0xcC56F8560678ebd2a8708D5181C11e3a3faFed07",
+    vaultFactory:  "0x283fc22aCEBCE5cB673B32ccbD77Fe732C4eB0E2",
     treasury:      "0x6C9317C1F839Ca166a9B92d925515BD1Fd533a68", // deployer — set a dedicated address before mainnet
     tokens: {
-      tUSDG: "0xe570b397f53C2220b71f8dFb7adB95Ceb9D5ce7c",
-      tWETH: "0xc20fc2E57B4c9dbf66797C96b6421C540056C1C5",
+      tUSDG: "0xF727a9E9813d884bfFf2Be906633f4C5C963DC99",
+      tWETH: "0x3981D4CC453ebc7F5eeC503fF00Da34BF5e65F5C",
     },
 
     // Vaults are EIP-1167 clones of this implementation, which is deployed once
     // and never initialised. Recorded because a clone carries no code of its
     // own — point a contract verifier at the implementation, not at a vault.
-    vaultImplementation: "0xa329c429F5774514e43F46fff5ec929dCF5704DF",
-    uniswapTwapLibrary:  "0xa8d4bc7916206bE346724Bf7504a8930C8f4e4B7",
+    vaultImplementation: "0xD6Ab14feAE66D9b82EEbdD0d9A4eCAda0c44D260",
+    uniswapTwapLibrary:  "0xFBe83c6B4c135d5c64C5A72394120C7dEFec18EF",
     // Reference only — the app reads uniswapFactory from AssetRegistry
     // on-chain rather than trusting this, so a registry repoint can't leave
     // the UI pointed at a stale factory.
     uniswap: {
-      factory: "0x091A1b4a179F60E3210115d3E543ca53791abF50",
-      router:  "0x85E4CDedC656b131B0cB5577a59B6a1892697540",
-      pool:    "0xa4C20E79C9D5881ea4137E81513a434199F7a00c", // tUSDG/tWETH 0.3%
+      factory: "0xC509Ed62cf655AD8eFd33a1B6Ba4724E38621680",
+      router:  "0x70Ce56aFf68cD3C5352c66C665B37258915b3F14",
+      pool:    "0x44A3024740aCDFe744500A606a8B3552717B5B76", // tUSDG/tWETH 0.3%
     },
-    yieldVenue4626: "0x354a7E3076B53fdA516E494691c3e3A334AaC891", // over tUSDG
+    yieldVenue4626: "0x7bd0860C36be9d101483920d6c8230Dd0fcf713E", // over tUSDG
   },
 
   // Arbitrum Sepolia (chain id 421614)
