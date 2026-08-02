@@ -238,10 +238,18 @@ export function KycGate({ address }) {
       {/* --- Testnet stand-in --- */}
       {MOCK_VERIFIER_URL && (
         <div style={{ marginTop: 18, paddingTop: 14, borderTop: "1px solid var(--hairline)" }}>
-          <p style={{ fontSize: 11, color: "var(--brick)", margin: "0 0 8px", lineHeight: 1.6 }}>
-            Testnet stand-in — a local signer will issue an attestation without checking anything.
-            No documents are examined and no identity is established. Present in place of a real
+          <p style={{ fontSize: 11, color: "var(--brick)", margin: "0 0 6px", lineHeight: 1.6 }}>
+            Testnet stand-in — a signer will issue an attestation without checking anything. No
+            documents are examined and no identity is established. Present in place of a real
             provider so the borrowing flow can be exercised.
+          </p>
+          {/* Named because it is not otherwise visible which service answers,
+              and the two differ in the only way that matters: a verifier
+              configured for another chain will report on a registry the app is
+              not using, and refuse a wallet as already verified when it is
+              not. That cost an hour to find. */}
+          <p className="mono" style={{ fontSize: 10, color: "var(--parch-dim)", margin: "0 0 8px" }}>
+            {MOCK_VERIFIER_URL}
           </p>
           <button
             onClick={useMockProvider}

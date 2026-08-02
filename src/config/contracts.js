@@ -49,7 +49,11 @@ const CONTRACTS_BY_CHAIN = {
   // still settle on-chain but no longer appear in the lender view, which
   // scopes its lookups to the current factory.
   46630: {
-    kycRegistry:   "0x93e1c4F4b0cD3F6A3feB7B6C056466535881a38e",
+    // Attester-based: recognises attestations issued by third-party identity
+    // providers rather than trusting a single key Covenza controls. Verified
+    // status did not carry over from the previous registry, deliberately —
+    // those records asserted that our own key had signed for a wallet.
+    kycRegistry:   "0x2A921Bd852CA4E22ef73A7772706771A1e4586E1",
     assetRegistry: "0x71FFe1CA1D087c2b72F661CB7F75172ce25badfd",
     insurancePool: "0xcC56F8560678ebd2a8708D5181C11e3a3faFed07",
     vaultFactory:  "0xdD04fd410B2Ea44E44931C8fdb8248B6B96BA8F5",
