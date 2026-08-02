@@ -1,31 +1,38 @@
 import { useState } from "react";
-import { useAccount, useChainId, useReadContract, useWriteContract, usePublicClient } from "wagmi";
+import { useChainId, useReadContract, useWriteContract, usePublicClient } from "wagmi";
 import { KYC_REGISTRY_ABI } from "../config/abis.js";
 import { getContractsForChain } from "../config/contracts.js";
+import { useAttesters } from "../hooks/useAttesters.js";
 
-// abis.js already exports pre-parsed ABIs — do not re-wrap in parseAbi().
 const kycAbi = KYC_REGISTRY_ABI;
 
-// URL for the KYC verifier service (netlify/functions/verify.js in production,
-// scripts/mock-verify-server.js locally). Set VITE_VERIFIER_SERVICE_URL in .env
-// to override — defaults to the local mock server for dev, so local testing
-// doesn't accidentally hit the live production function.
-const VERIFIER_SERVICE_URL =
-  import.meta.env.VITE_VERIFIER_SERVICE_URL || "http://localhost:4000";
+// A local signing service, for testnet only. Unset in any real deployment —
+// its presence is what puts the simulated path on screen, and the screen says
+// so rather than letting a demo badge pass for a real check.
+const MOCK_VERIFIER_URL = import.meta.env.VITE_VERIFIER_SERVICE_URL || "";
 
+/**
+ * The borrowing gate.
+ *
+ * Covenza performs no identity check, issues no attestation, and collects no
+ * personal data. It reads evidence that a recognised provider produced
+ * independently. That is the whole of the design, and this screen exists to
+ * make it legible: an earlier version asked for name, email and jurisdiction
+ * and then discarded them, which taught exactly the opposite — that the
+ * protocol takes custody of identity.
+ */
 export function KycGate({ address }) {
   const chainId = useChainId();
   const contracts = getContractsForChain(chainId);
-  console.log("DEBUG — chainId:", chainId, "registry:", contracts.kycRegistry);
-
-  const [name, setName] = useState("");
-  const [email, setEmail] = useState("");
-  const [jurisdiction, setJurisdiction] = useState("");
-  const [status, setStatus] = useState("idle"); // idle | requesting-signature | awaiting-confirmation | error
-  const [errorMessage, setErrorMessage] = useState(null);
-
   const publicClient = usePublicClient();
   const { writeContractAsync } = useWriteContract();
+
+  const { live: providers, legacy, isLoading: loadingProviders } = useAttesters();
+
+  const [signature, setSignature] = useState("");
+  const [expiry, setExpiry] = useState("");
+  const [status, setStatus] = useState("idle");
+  const [errorMessage, setErrorMessage] = useState(null);
 
   const { data: isVerified, refetch: refetchVerified } = useReadContract({
     address: contracts.kycRegistry,
@@ -43,39 +50,52 @@ export function KycGate({ address }) {
     query: { enabled: !!address && !!isVerified },
   });
 
-  async function submit() {
+  const { data: attester } = useReadContract({
+    address: contracts.kycRegistry,
+    abi: kycAbi,
+    functionName: "attestedBy",
+    args: [address],
+    query: { enabled: !!address && !!isVerified },
+  });
+
+  async function present(sig, exp) {
     setErrorMessage(null);
-    setStatus("requesting-signature");
-
+    setStatus("submitting");
     try {
-      const response = await fetch(`${VERIFIER_SERVICE_URL}/verify`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ borrowerAddress: address }),
-      });
-
-      const data = await response.json();
-
-      if (!response.ok) {
-        throw new Error(data.error || "Verification request failed.");
-      }
-
-      setStatus("awaiting-confirmation");
-
       const fees = await publicClient.estimateFeesPerGas();
       const hash = await writeContractAsync({
         address: contracts.kycRegistry,
         abi: kycAbi,
         functionName: "verifyWithSignature",
-        args: [data.borrowerAddress, BigInt(data.expiry), data.signature],
+        args: [address, BigInt(exp), sig],
         maxFeePerGas: fees.maxFeePerGas * 2n,
         maxPriorityFeePerGas: fees.maxPriorityFeePerGas,
       });
-
       await publicClient.waitForTransactionReceipt({ hash });
-
       await refetchVerified();
       setStatus("idle");
+      setSignature("");
+      setExpiry("");
+    } catch (err) {
+      setErrorMessage(err.shortMessage || err.message || "Something went wrong.");
+      setStatus("error");
+    }
+  }
+
+  // Testnet only: fetches an attestation from the local mock signer, then
+  // presents it down exactly the same path a real one would take.
+  async function useMockProvider() {
+    setErrorMessage(null);
+    setStatus("requesting");
+    try {
+      const res = await fetch(`${MOCK_VERIFIER_URL}/verify`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ borrowerAddress: address }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Verification request failed.");
+      await present(data.signature, data.expiry);
     } catch (err) {
       setErrorMessage(err.shortMessage || err.message || "Something went wrong.");
       setStatus("error");
@@ -83,79 +103,195 @@ export function KycGate({ address }) {
   }
 
   if (isVerified) {
+    const issuer = providers.find(
+      (p) => p.key.toLowerCase() === (attester || "").toLowerCase()
+    );
     return (
       <div style={cardStyle}>
         <p style={{ fontSize: 11, color: "var(--parch-dim)", margin: "0 0 8px" }}>KYC status</p>
         <p style={{ fontSize: 14, color: "var(--brass)", margin: 0 }}>Verified</p>
-        <p style={{ fontSize: 12, color: "var(--parch-dim)", margin: "8px 0 0" }}>
-          This wallet holds a Covenza KYC badge{badgeId ? ` (token #${badgeId.toString()})` : ""} and is
-          eligible for vault origination.
+        <p style={{ fontSize: 12, color: "var(--parch-dim)", margin: "8px 0 0", lineHeight: 1.6 }}>
+          This wallet holds a Covenza KYC badge{badgeId ? ` (token #${badgeId.toString()})` : ""} and
+          can borrow.{issuer ? ` Verified by ${issuer.name}.` : ""} The badge records that a check
+          happened — not who you are.
         </p>
       </div>
     );
   }
 
-  const busy = status === "requesting-signature" || status === "awaiting-confirmation";
+  const busy = status === "requesting" || status === "submitting";
+  const canPresent = signature.trim().length > 0 && Number(expiry) > 0 && !busy;
 
   return (
     <div style={cardStyle}>
-      <p style={{ fontSize: 11, color: "var(--parch-dim)", margin: "0 0 4px" }}>KYC verification required</p>
-      <p style={{ fontSize: 12, color: "var(--parch-dim)", margin: "0 0 16px" }}>
-        This is a simulated intake form — no documents are actually collected or checked. The signed
-        verification and on-chain badge that follow are real.
+      <p style={{ fontSize: 11, color: "var(--parch-dim)", margin: "0 0 10px" }}>
+        Borrowing requires a verified wallet
       </p>
 
-      <Field label="Full name">
-        <input value={name} onChange={(e) => setName(e.target.value)} style={inputStyle} disabled={busy} />
-      </Field>
-      <Field label="Email">
-        <input value={email} onChange={(e) => setEmail(e.target.value)} style={inputStyle} disabled={busy} />
-      </Field>
-      <Field label="Jurisdiction">
-        <input
-          value={jurisdiction}
-          onChange={(e) => setJurisdiction(e.target.value)}
-          style={inputStyle}
-          placeholder="e.g. Australia"
-          disabled={busy}
-        />
-      </Field>
+      <p style={{ fontSize: 12, color: "var(--parch-dim)", margin: "0 0 6px", lineHeight: 1.6 }}>
+        Covenza does not carry out identity checks and never receives your name, documents or any
+        other personal data. Get checked by one of the providers below; they give you an attestation
+        for this address, which you present here.
+      </p>
+      <p style={{ fontSize: 12, color: "var(--parch-dim)", margin: "0 0 16px", lineHeight: 1.6 }}>
+        What ends up on chain is a badge saying this wallet passed a check, and nothing about who
+        you are.
+      </p>
+
+      <p className="mono" style={{ fontSize: 11, color: "var(--parch-dim)", margin: "0 0 16px" }}>
+        {address}
+      </p>
+
+      {/* --- Where to go --- */}
+      <p style={sectionLabel}>Recognised providers</p>
+
+      {loadingProviders && (
+        <p style={{ fontSize: 12, color: "var(--parch-dim)", margin: "0 0 14px" }}>Loading…</p>
+      )}
+
+      {legacy && (
+        <p style={{ fontSize: 12, color: "var(--parch-dim)", margin: "0 0 14px", lineHeight: 1.6 }}>
+          The registry deployed here predates recognised providers — it still trusts a single
+          signing key, so there is no list to show. Redeploy the KYC registry to use this.
+        </p>
+      )}
+
+      {!legacy && !loadingProviders && providers.length === 0 && (
+        <p style={{ fontSize: 12, color: "var(--brick)", margin: "0 0 14px", lineHeight: 1.6 }}>
+          This deployment recognises no identity providers, so no wallet can be verified. The
+          operator sets the list; until one is added, borrowing is closed.
+        </p>
+      )}
+
+      <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 18 }}>
+        {providers.map((p) => (
+          <div key={p.key} style={rowStyle}>
+            <div>
+              <p style={{ fontSize: 13, color: "var(--parch)", margin: "0 0 2px" }}>{p.name}</p>
+              <p className="mono" style={{ fontSize: 10, color: "var(--parch-dim)", margin: 0 }}>
+                {p.key}
+              </p>
+            </div>
+            {p.url ? (
+              <a
+                href={p.url}
+                target="_blank"
+                rel="noopener noreferrer"
+                style={{ fontSize: 12, color: "var(--brass)", whiteSpace: "nowrap" }}
+              >
+                Get verified →
+              </a>
+            ) : (
+              <span style={{ fontSize: 11, color: "var(--parch-dim)", whiteSpace: "nowrap" }}>
+                no link published
+              </span>
+            )}
+          </div>
+        ))}
+      </div>
+
+      {/* --- Presenting the result --- */}
+      <p style={sectionLabel}>Present an attestation</p>
+      <p style={{ fontSize: 11, color: "var(--parch-dim)", margin: "0 0 12px", lineHeight: 1.6 }}>
+        Paste what your provider gave you. The registry checks it was signed by a recognised
+        provider and covers this address; an attestation for a different wallet, or from a provider
+        that is not recognised, is refused.
+      </p>
+
+      <label style={labelStyle}>Signature</label>
+      <input
+        value={signature}
+        onChange={(e) => setSignature(e.target.value)}
+        placeholder="0x…"
+        style={inputStyle}
+        disabled={busy}
+      />
+
+      <label style={{ ...labelStyle, marginTop: 10 }}>Expiry (unix seconds)</label>
+      <input
+        value={expiry}
+        onChange={(e) => setExpiry(e.target.value)}
+        placeholder="1785640000"
+        style={inputStyle}
+        disabled={busy}
+      />
 
       <button
-        onClick={submit}
-        disabled={!name || !email || busy}
+        onClick={() => present(signature.trim(), expiry)}
+        disabled={!canPresent}
         style={{
           width: "100%",
-          background: name && email && !busy ? "var(--brass)" : "transparent",
-          color: name && email && !busy ? "var(--ink)" : "var(--parch-dim)",
-          border: name && email && !busy ? "none" : "1px solid var(--hairline)",
+          background: canPresent ? "var(--brass)" : "transparent",
+          color: canPresent ? "var(--ink)" : "var(--parch-dim)",
+          border: canPresent ? "none" : "1px solid var(--hairline)",
           borderRadius: 8,
           padding: 11,
           fontSize: 13,
           fontWeight: 500,
-          marginTop: 4,
+          marginTop: 14,
+          cursor: canPresent ? "pointer" : "default",
         }}
       >
-        {status === "requesting-signature" && "Requesting verification..."}
-        {status === "awaiting-confirmation" && "Confirming on-chain..."}
-        {(status === "idle" || status === "error") && "Submit for verification"}
+        {status === "submitting" ? "Confirming on-chain…" : "Present attestation"}
       </button>
 
+      {/* --- Testnet stand-in --- */}
+      {MOCK_VERIFIER_URL && (
+        <div style={{ marginTop: 18, paddingTop: 14, borderTop: "1px solid var(--hairline)" }}>
+          <p style={{ fontSize: 11, color: "var(--brick)", margin: "0 0 8px", lineHeight: 1.6 }}>
+            Testnet stand-in — a local signer will issue an attestation without checking anything.
+            No documents are examined and no identity is established. Present in place of a real
+            provider so the borrowing flow can be exercised.
+          </p>
+          <button
+            onClick={useMockProvider}
+            disabled={busy}
+            style={{
+              background: "transparent",
+              color: "var(--parch-dim)",
+              border: "1px solid var(--hairline)",
+              borderRadius: 8,
+              padding: "9px 14px",
+              fontSize: 12,
+              cursor: busy ? "default" : "pointer",
+            }}
+          >
+            {status === "requesting" ? "Requesting…" : "Issue a simulated attestation"}
+          </button>
+        </div>
+      )}
+
       {errorMessage && (
-        <p style={{ fontSize: 12, color: "var(--brick)", marginTop: 10 }}>{errorMessage}</p>
+        <p style={{ fontSize: 12, color: "var(--brick)", marginTop: 12 }}>{errorMessage}</p>
       )}
     </div>
   );
 }
 
-function Field({ label, children }) {
-  return (
-    <div style={{ marginBottom: 12 }}>
-      <label style={{ fontSize: 12, color: "var(--parch-dim)", display: "block", marginBottom: 6 }}>{label}</label>
-      {children}
-    </div>
-  );
-}
+const sectionLabel = {
+  fontSize: 12,
+  fontWeight: 600,
+  color: "var(--parch)",
+  margin: "0 0 8px",
+};
+
+const labelStyle = {
+  fontSize: 12,
+  color: "var(--parch-dim)",
+  display: "block",
+  marginBottom: 6,
+};
+
+const rowStyle = {
+  display: "flex",
+  justifyContent: "space-between",
+  alignItems: "center",
+  gap: 12,
+  background: "var(--ink)",
+  border: "1px solid var(--hairline)",
+  borderRadius: 8,
+  padding: "10px 12px",
+};
 
 const cardStyle = {
   background: "var(--panel)",
@@ -171,5 +307,6 @@ const inputStyle = {
   borderRadius: 8,
   padding: "9px 10px",
   color: "var(--parch)",
-  fontSize: 13,
+  fontSize: 12,
+  fontFamily: "IBM Plex Mono, monospace",
 };
