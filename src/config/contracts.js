@@ -57,6 +57,10 @@ const CONTRACTS_BY_CHAIN = {
     tokens: {
       tUSDG: "0xF727a9E9813d884bfFf2Be906633f4C5C963DC99",
       tWETH: "0x3981D4CC453ebc7F5eeC503fF00Da34BF5e65F5C",
+      // Standard tier, 72h grace. A tokenised equity trades 24/5, so a
+      // deadline falling on a Friday evening has no market to settle into
+      // until Monday.
+      tAAPL: "0x422307E3f960B609EFd54841DD9979b1ad987c7e",
     },
 
     // Vaults are EIP-1167 clones of this implementation, which is deployed once
@@ -141,4 +145,5 @@ export function symbolForToken(chainId, address) {
 export const TOKEN_DECIMALS = {
   WETH: 18, WBTC: 8, USDC: 6, USDT: 6,
   tUSDG: 18, tWETH: 18, // both 18 deliberately, so a Uniswap tick of 0 is true parity
+  tAAPL: 18,
 };
