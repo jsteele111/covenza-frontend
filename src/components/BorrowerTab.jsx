@@ -1,9 +1,10 @@
 import { useState, useEffect } from "react";
 import { useAccount, useChainId, useReadContract, useWriteContract, useWaitForTransactionReceipt, usePublicClient } from "wagmi";
-import { parseUnits } from "viem";
+import { parseUnits, formatUnits } from "viem";
 import { KYC_REGISTRY_ABI, ERC20_ABI, ASSET_REGISTRY_ABI } from "../config/abis.js";
 import { getContractsForChain, isPlaceholder, symbolForToken } from "../config/contracts.js";
 import { useLatestVault } from "../hooks/useLatestVault.js";
+import { useSwapPreflight } from "../hooks/useSwapPreflight.js";
 import { useVaultData } from "../hooks/useVaultData.js";
 import { useVaultAction } from "../hooks/useVaultAction.js";
 import { useHeldAssets } from "../hooks/useHeldAssets.js";
@@ -174,6 +175,32 @@ export function BorrowerTab() {
     }
   }, [settleAction.isSuccess]);
 
+  // --- Swap pre-flight ---
+  //
+  // Declared HERE, above the early returns, because hooks may not be
+  // conditional and several of those returns fire before a vault exists.
+  // Everything it needs is read defensively for the same reason; the hook
+  // itself no-ops unless `enabled`.
+  const parsedSwapIn = tryParseUnits(swapAmountIn, vault?.decimals);
+  const parsedSwapMinOut = tryParseUnits(swapMinOut, swapAssetDecimals);
+
+  const swapInputsValid = Boolean(
+    vault && !vault.isSettled && vault.depositPaid && swapAsset &&
+    parsedSwapIn !== undefined && parsedSwapMinOut !== undefined &&
+    parsedSwapIn <= vault.investableRemaining
+  );
+
+  // The form's own checks cover only what the client can see — balance and
+  // well-formedness. The vault additionally enforces the TWAP window, the
+  // entry-impact cap, the tier ceiling and the exposure cap, none of which are
+  // knowable from the inputs alone.
+  const swapPreflight = useSwapPreflight({
+    vaultAddress: latestVaultAddress,
+    enabled: swapInputsValid,
+    functionName: "swap",
+    args: [swapAsset, parsedSwapIn, parsedSwapMinOut, swapFeeTier],
+  });
+
   if (!isConnected) {
     return <EmptyState message="Connect the borrower wallet to view your vault." />;
   }
@@ -286,11 +313,8 @@ export function BorrowerTab() {
     : null;
 
   // --- Swap ---
-  const parsedSwapIn = tryParseUnits(swapAmountIn, vault.decimals);
-  const parsedSwapMinOut = tryParseUnits(swapMinOut, swapAssetDecimals);
-  const swapDisabled =
-    !canAct || !vault.depositPaid || !swapAsset || parsedSwapIn === undefined ||
-    parsedSwapMinOut === undefined || parsedSwapIn > vault.investableRemaining;
+  // (parsing and pre-flight live above the early returns — hooks rules)
+  const swapDisabled = !swapInputsValid || swapPreflight.status === "would-revert";
   const swapDisabledReason = !vault.depositPaid
     ? "Pay the deposit before swapping."
     : !canAct
@@ -303,6 +327,8 @@ export function BorrowerTab() {
     ? "Enter a minimum output amount."
     : parsedSwapIn > vault.investableRemaining
     ? `Exceeds investable balance (${formatTokenAmount(vault.investableRemaining, vault.decimals)} ${vault.symbol}).`
+    : swapPreflight.status === "would-revert"
+    ? swapPreflight.reason
     : null;
 
   // --- Settle ---
@@ -317,6 +343,24 @@ export function BorrowerTab() {
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
       <VaultStatement vault={vault} />
+
+      {/* A settled vault is history, not a state to be stuck in. Repaying one
+          loan should not remove the means of taking the next — so the board
+          comes back as soon as this vault closes. The panels below stay
+          visible as the record of what was just settled. */}
+      {vault.isSettled && (
+        <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+          <div>
+            <p style={{ fontSize: 13, fontWeight: 600, color: "var(--parch)", margin: "0 0 4px" }}>
+              Borrow again
+            </p>
+            <p style={{ fontSize: 11, color: "var(--parch-dim)", margin: 0, lineHeight: 1.5 }}>
+              This loan is closed. Any live mandate can be filled straight away.
+            </p>
+          </div>
+          <MandateBoard onFilled={refetchVaultList} />
+        </div>
+      )}
 
       {/* --- Deposit --- */}
       <div style={cardStyle}>
@@ -544,13 +588,29 @@ function SwapBackRow({ vaultAddress, held, loanSymbol, loanDecimals, onDone }) {
 
   const parsedAmountIn = tryParseUnits(amountIn, held.decimals);
   const parsedMinOut = tryParseUnits(minOut, loanDecimals);
-  const disabled = parsedAmountIn === undefined || parsedMinOut === undefined || parsedAmountIn > held.balance;
+
+  const inputsValid =
+    parsedAmountIn !== undefined && parsedMinOut !== undefined && parsedAmountIn <= held.balance;
+
+  const preflight = useSwapPreflight({
+    vaultAddress,
+    enabled: inputsValid,
+    functionName: "swapBack",
+    args: [held.address, parsedAmountIn, parsedMinOut],
+  });
+
+  const disabled = !inputsValid || preflight.status === "would-revert";
   const disabledReason = parsedAmountIn === undefined
     ? "Enter a valid amount."
     : parsedMinOut === undefined
     ? "Enter a minimum output."
     : parsedAmountIn > held.balance
-    ? "Amount exceeds held balance."
+    // The displayed balance is rounded for legibility, so typing what is on
+    // screen can exceed the real one by a few wei. Say so, and offer the exact
+    // figure rather than making the borrower guess how far down to round.
+    ? "Amount exceeds held balance — use Max for the exact figure."
+    : preflight.status === "would-revert"
+    ? preflight.reason
     : null;
 
   return (
@@ -559,6 +619,16 @@ function SwapBackRow({ vaultAddress, held, loanSymbol, loanDecimals, onDone }) {
         <span className="mono" style={{ fontSize: 13, color: "var(--parch)" }}>{held.symbol}</span>
         <span className="mono" style={{ fontSize: 12, color: "var(--parch-dim)" }}>
           Held: {formatTokenAmount(held.balance, held.decimals)}
+          <button
+            type="button"
+            onClick={() => setAmountIn(formatUnits(held.balance, held.decimals))}
+            style={{
+              background: "none", border: "none", padding: "0 0 0 8px",
+              color: "var(--slate)", fontSize: 11, cursor: "pointer", textDecoration: "underline",
+            }}
+          >
+            Max
+          </button>
         </span>
       </div>
       <Row2>
