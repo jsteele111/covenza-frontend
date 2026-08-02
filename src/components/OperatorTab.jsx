@@ -6,6 +6,7 @@ import { getContractsForChain, isPlaceholder, symbolForToken } from "../config/c
 import { shortAddress, formatTokenAmount } from "../utils/format.js";
 import { useSettledVaultsWithLoss } from "../hooks/useSettledVaultsWithLoss.js";
 import { useAssetPreflight } from "../hooks/useAssetPreflight.js";
+import { useAttesters } from "../hooks/useAttesters.js";
 import { VENUE_LABELS, TIER_LABELS } from "../hooks/useVaultData.js";
 import { ActionButton } from "./ActionButton.jsx";
 
@@ -295,6 +296,12 @@ export function OperatorTab() {
       {registryReady ? (
         <>
           <AssetWhitelistPanel />
+          {/* Sits beside the asset whitelist because it is the same class of
+              decision: both admit something to the protocol on the operator's
+              judgement alone. Recognising an attester is arguably the heavier
+              of the two — a listed asset can lose money, a listed attester can
+              admit anyone. */}
+          <AttesterPanel />
           <InsurancePoolPanel />
           <SettlementConfigPanel />
         </>
@@ -303,6 +310,155 @@ export function OperatorTab() {
           <p style={sectionLabelStyle}>Protocol governance</p>
           <EmptyState message="The asset registry and insurance pool haven't been deployed on this network yet — whitelist, insurance, and settlement-config controls will appear here once Group F's deployment fills in real addresses." />
         </div>
+      )}
+    </div>
+  );
+}
+
+// --- Recognised identity providers ---
+
+/**
+ * Curates the keys whose KYC attestations the registry will accept.
+ *
+ * Covenza performs no identity check itself, so this list is the entirety of
+ * the control: the contract verifies only that a signature came from a key
+ * here, never that a real check happened behind it. Worth stating on screen
+ * rather than leaving to be inferred, because the panel otherwise looks like
+ * routine configuration.
+ */
+function AttesterPanel() {
+  const chainId = useChainId();
+  const contracts = getContractsForChain(chainId);
+  const publicClient = usePublicClient();
+
+  const { all, legacy, isLoading } = useAttesters();
+
+  const [key, setKey] = useState("");
+  const [name, setName] = useState("");
+  const [url, setUrl] = useState("");
+  const [pending, setPending] = useState(null);
+
+  const { writeContract, data: hash, isPending, error, reset } = useWriteContract();
+  const { data: receipt } = useWaitForTransactionReceipt({ hash });
+
+  useEffect(() => {
+    if (receipt?.status === "success") {
+      setKey(""); setName(""); setUrl(""); setPending(null); reset();
+    }
+  }, [receipt]);
+
+  async function send(functionName, args, label) {
+    setPending(label);
+    try {
+      const fees = await publicClient.estimateFeesPerGas();
+      writeContract({
+        address: contracts.kycRegistry,
+        abi: KYC_REGISTRY_ABI,
+        functionName,
+        args,
+        maxFeePerGas: fees.maxFeePerGas * 2n,
+        maxPriorityFeePerGas: fees.maxPriorityFeePerGas,
+      });
+    } catch {
+      setPending(null);
+    }
+  }
+
+  if (legacy) {
+    return (
+      <div style={{ marginTop: 28 }}>
+        <p style={sectionLabelStyle}>Recognised identity providers</p>
+        <EmptyState message="The KYC registry deployed here predates recognised providers — it still trusts a single signing key. Redeploy it to curate a provider list." />
+      </div>
+    );
+  }
+
+  const valid = isAddress(key) && name.trim() && url.trim();
+  const busy = isPending || Boolean(pending);
+
+  return (
+    <div style={{ marginTop: 28 }}>
+      <p style={sectionLabelStyle}>Recognised identity providers</p>
+      <p style={{ fontSize: 12, color: "var(--parch-dim)", margin: "0 0 12px", lineHeight: 1.6 }}>
+        Covenza runs no identity checks. It accepts attestations signed by the keys below, and
+        verifies only that the signature came from one of them — never that a check actually
+        happened. A recognised key can admit any wallet to the protocol.
+      </p>
+
+      <div style={cardStyle}>
+        <Row2>
+          <Field label="Signing key">
+            <input value={key} onChange={(e) => setKey(e.target.value)} placeholder="0x…" style={inputStyle} />
+          </Field>
+          <Field label="Provider name">
+            <input value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. Sumsub" style={inputStyle} />
+          </Field>
+        </Row2>
+        <Field label="Where borrowers get verified">
+          <input value={url} onChange={(e) => setUrl(e.target.value)} placeholder="https://…" style={inputStyle} />
+        </Field>
+        <p style={{ fontSize: 11, color: "var(--parch-dim)", margin: "-4px 0 12px", lineHeight: 1.5 }}>
+          The URL is stored on chain and shown to unverified borrowers. Recognising a provider and
+          telling people where to find them are one decision.
+        </p>
+
+        <ActionButton
+          label="Recognise provider"
+          primary={valid}
+          disabled={!valid || busy}
+          disabledReason={
+            !isAddress(key) ? "Enter a valid signing key."
+              : !name.trim() ? "Name it — an unnamed attester cannot be audited."
+              : "Give the URL borrowers should be sent to."
+          }
+          loading={pending === "add"}
+          onClick={() => send("addAttester", [key, name.trim(), url.trim()], "add")}
+        />
+
+        {error && (
+          <p style={{ fontSize: 12, color: "var(--brick)", marginTop: 10 }}>
+            {error.shortMessage || error.message}
+          </p>
+        )}
+      </div>
+
+      {isLoading && <p style={{ fontSize: 12, color: "var(--parch-dim)", marginTop: 12 }}>Loading…</p>}
+
+      <div style={{ display: "flex", flexDirection: "column", gap: 8, marginTop: 12 }}>
+        {all.map((a) => (
+          <div key={a.key} style={{ ...cardStyle, display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12 }}>
+            <div style={{ minWidth: 0 }}>
+              <p style={{ fontSize: 13, color: a.recognised ? "var(--parch)" : "var(--parch-dim)", margin: "0 0 2px" }}>
+                {a.name}{" "}
+                <span style={{ fontSize: 11, color: a.recognised ? "var(--brass)" : "var(--parch-dim)" }}>
+                  {a.recognised ? "recognised" : "delisted"}
+                </span>
+              </p>
+              <p className="mono" style={{ fontSize: 10, color: "var(--parch-dim)", margin: 0 }}>{a.key}</p>
+              {a.url && (
+                <p style={{ fontSize: 11, color: "var(--parch-dim)", margin: "2px 0 0", overflowWrap: "anywhere" }}>{a.url}</p>
+              )}
+            </div>
+            {a.recognised && (
+              <button
+                onClick={() => send("removeAttester", [a.key], "remove")}
+                disabled={busy}
+                style={smallDangerButtonStyle}
+              >
+                Delist
+              </button>
+            )}
+          </div>
+        ))}
+      </div>
+
+      {all.length > 0 && (
+        <p style={{ fontSize: 11, color: "var(--parch-dim)", margin: "10px 0 0", lineHeight: 1.5 }}>
+          Delisted providers stay listed: the record of who admitted whom is worth more than a tidy
+          list. Delisting stops new admissions and leaves existing verifications standing — dropping
+          a provider commercially is not the same as doubting every check they ran. Revoke those
+          individually under verified addresses above.
+        </p>
       )}
     </div>
   );
