@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { useAccount, useChainId, useReadContract, useWriteContract, useWaitForTransactionReceipt, usePublicClient } from "wagmi";
 import { parseUnits, maxUint256 } from "viem";
-import { VAULT_FACTORY_ABI, ERC20_ABI } from "../config/abis.js";
+import { VAULT_FACTORY_ABI, ERC20_ABI, ASSET_REGISTRY_ABI } from "../config/abis.js";
 import { getContractsForChain } from "../config/contracts.js";
 import { formatTokenAmount } from "../utils/format.js";
 import { useMandates, previewMandateApr } from "../hooks/useMandates.js";
@@ -77,6 +77,24 @@ export function MandatePanel({ selectedAsset, selectedSymbol, decimals }) {
   const wantedMax = tryParse(maxPrincipal, decimals);
   const capacityShort = capacity !== undefined && wantedMax !== undefined && capacity < wantedMax;
 
+  // The floor depends on the RISK CEILING, not on the loan asset — a mandate
+  // permitting Standard-tier holdings is underwriting Standard-tier
+  // volatility whatever it lends. Quoting fixed blue-chip figures here was
+  // wrong by 10 percentage points the moment the lender moved off blue chip.
+  const { data: floorShortBps } = useReadContract({
+    address: contracts.assetRegistry, abi: ASSET_REGISTRY_ABI,
+    functionName: "minimumDepositBpsForTier",
+    args: [maxTier, BigInt(Math.round(Number(minTermDays) * DAY) || 0)],
+    query: { enabled: Number(minTermDays) > 0 },
+  });
+
+  const { data: floorLongBps } = useReadContract({
+    address: contracts.assetRegistry, abi: ASSET_REGISTRY_ABI,
+    functionName: "minimumDepositBpsForTier",
+    args: [maxTier, BigInt(Math.round(Number(maxTermDays) * DAY) || 0)],
+    query: { enabled: Number(maxTermDays) > 0 },
+  });
+
   async function approveAll() {
     const fees = await publicClient.estimateFeesPerGas();
     writeContract({
@@ -95,6 +113,11 @@ export function MandatePanel({ selectedAsset, selectedSymbol, decimals }) {
     minDepositBps: Math.round(Number(minDeposit) * 100),
     minAprBps: Math.round(Number(minApr) * 100),
   };
+  // Declared after `preview`, which it reads — the floor queries above can sit
+  // higher because they depend only on the tier and the term.
+  const belowFloor =
+    floorLongBps !== undefined && preview.minDepositBps < Number(floorLongBps);
+
   const cheapest = previewMandateApr(preview, Number(minTermDays) * DAY, preview.minDepositBps);
   const dearest  = previewMandateApr(preview, Number(maxTermDays) * DAY, preview.minDepositBps);
   const generous = previewMandateApr(preview, Number(maxTermDays) * DAY, preview.minDepositBps + 2000);
@@ -245,11 +268,25 @@ export function MandatePanel({ selectedAsset, selectedSymbol, decimals }) {
           terms — every borrower takes the longest term on the smallest deposit. Here
           both are priced, so you are indifferent across the whole surface.
         </p>
-        <p style={{ fontSize: 11, color: "var(--parch-dim)", margin: "0 0 10px", lineHeight: 1.5 }}>
+        <p style={{
+          fontSize: 11,
+          color: belowFloor ? "var(--brick)" : "var(--parch-dim)",
+          margin: "0 0 10px",
+          lineHeight: 1.5,
+        }}>
           Your minimum deposit sits on top of the protocol's own floor, which rises with
-          the square root of term — a 7-day blue-chip loan needs about 15%, a 30-day one
-          about 31%. Whichever is higher binds, so setting yours low does not expose you
-          below the floor; it just means the floor is what applies at longer terms.
+          the square root of term and with the risk ceiling you set above.
+          {floorShortBps !== undefined && floorLongBps !== undefined && (
+            <> At <strong>{TIER_LABELS[maxTier]}</strong> the floor runs from{" "}
+              <strong>{(Number(floorShortBps) / 100).toFixed(1)}%</strong> at {minTermDays}d to{" "}
+              <strong>{(Number(floorLongBps) / 100).toFixed(1)}%</strong> at {maxTermDays}d.</>
+          )}
+          {" "}Whichever is higher binds, so setting yours low does not expose you below
+          the floor — it just means the floor is what applies.
+          {belowFloor && (
+            <> Yours is under the floor at the long end, so borrowers taking longer terms
+            will be asked for more than you advertised.</>
+          )}
         </p>
 
         <Row2>
