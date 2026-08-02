@@ -11,6 +11,7 @@ import { PublicDashboard } from "./components/PublicDashboard.jsx";
 // rewritten for v2 in its own group (E4 lender, E5 borrower, E6
 // operator); until then they render inside the new routed shell exactly
 // as before, so the app stays usable at every step of the rebuild.
+import { useDeploymentHealth } from "./hooks/useDeploymentHealth.js";
 import { LenderTab } from "./components/LenderTab.jsx";
 import { BorrowerTab } from "./components/BorrowerTab.jsx";
 import { OperatorTab } from "./components/OperatorTab.jsx";
@@ -83,6 +84,7 @@ function Shell() {
         </header>
 
         <main style={{ paddingTop: 20, paddingBottom: 40 }}>
+          <DeploymentHealthBanner />
           {isConnected && !isLoading && <RoleSwitcher roles={roles} />}
 
           <Routes>
@@ -131,6 +133,43 @@ function Shell() {
  * real enforcement; the operator route being unlinked from the landing
  * page is just the social nicety on top of it, not the actual guard.
  */
+/**
+ * Announces a wiped deployment rather than rendering zeros over it.
+ *
+ * Deliberately a banner and not a blocking screen: the addresses may be stale
+ * for only part of the stack, and a reader who understands that is better
+ * served by seeing the app with a warning than by being locked out of it.
+ */
+function DeploymentHealthBanner() {
+  const { status, missing } = useDeploymentHealth();
+  if (status !== "wiped") return null;
+
+  return (
+    <div style={{
+      border: "1px solid var(--brick)",
+      borderRadius: 10,
+      padding: "14px 16px",
+      marginBottom: 16,
+      background: "rgba(160,60,50,0.08)",
+    }}>
+      <p style={{ fontSize: 13, fontWeight: 600, color: "var(--brick)", margin: "0 0 6px" }}>
+        This deployment is gone
+      </p>
+      <p style={{ fontSize: 12, color: "var(--parch-dim)", margin: "0 0 8px", lineHeight: 1.6 }}>
+        There is no contract code at {missing.length === 1 ? "this address" : "these addresses"} any
+        more. Robinhood testnet periodically wipes contract state while keeping balances and block
+        height, so everything below will read as empty rather than failing — which is why this
+        notice exists at all. Redeploy and update <span className="mono">contracts.js</span>.
+      </p>
+      {missing.map((m) => (
+        <p key={m.address} className="mono" style={{ fontSize: 11, color: "var(--parch-dim)", margin: "2px 0" }}>
+          {m.label}: {m.address}
+        </p>
+      ))}
+    </div>
+  );
+}
+
 function GuardedRoute({ allowed, isLoading, children }) {
   // Roles arrive from chain reads, so on a cold load into a deep link they
   // are briefly empty. Redirecting on that transient state bounced anyone
