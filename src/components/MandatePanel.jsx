@@ -241,6 +241,12 @@ export function MandatePanel({ selectedAsset, selectedSymbol, decimals }) {
           terms — every borrower takes the longest term on the smallest deposit. Here
           both are priced, so you are indifferent across the whole surface.
         </p>
+        <p style={{ fontSize: 11, color: "var(--parch-dim)", margin: "0 0 10px", lineHeight: 1.5 }}>
+          Your minimum deposit sits on top of the protocol's own floor, which rises with
+          the square root of term — a 7-day blue-chip loan needs about 15%, a 30-day one
+          about 31%. Whichever is higher binds, so setting yours low does not expose you
+          below the floor; it just means the floor is what applies at longer terms.
+        </p>
 
         <Row2>
           <Field label="Base rate (% APR)">

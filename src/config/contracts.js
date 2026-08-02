@@ -41,12 +41,19 @@ const CONTRACTS_BY_CHAIN = {
   // and redeployed. Verify before any demo — a stale address returns empty
   // data rather than failing loudly, because calls to codeless addresses
   // succeed with no returndata.
+  //
+  // The factory and vault implementation were rotated again at Phase 4 to put
+  // mandates and risk tiers in service. The registry, KYC registry and
+  // insurance pool are the originals and kept their state — the pool's 2000
+  // tUSDG reserve carried across. Vaults originated by the previous factory
+  // still settle on-chain but no longer appear in the lender view, which
+  // scopes its lookups to the current factory.
   46630: {
     kycRegistry:   "0x93e1c4F4b0cD3F6A3feB7B6C056466535881a38e",
     assetRegistry: "0x71FFe1CA1D087c2b72F661CB7F75172ce25badfd",
     insurancePool: "0xcC56F8560678ebd2a8708D5181C11e3a3faFed07",
-    vaultFactory:  "0x283fc22aCEBCE5cB673B32ccbD77Fe732C4eB0E2",
-    treasury:      "0x6C9317C1F839Ca166a9B92d925515BD1Fd533a68", // deployer — set a dedicated address before mainnet
+    vaultFactory:  "0xdD04fd410B2Ea44E44931C8fdb8248B6B96BA8F5",
+    treasury:      "0x2e6075b0B10c747357C2Bd58075af5e471f1f5F3",
     tokens: {
       tUSDG: "0xF727a9E9813d884bfFf2Be906633f4C5C963DC99",
       tWETH: "0x3981D4CC453ebc7F5eeC503fF00Da34BF5e65F5C",
@@ -55,8 +62,8 @@ const CONTRACTS_BY_CHAIN = {
     // Vaults are EIP-1167 clones of this implementation, which is deployed once
     // and never initialised. Recorded because a clone carries no code of its
     // own — point a contract verifier at the implementation, not at a vault.
-    vaultImplementation: "0xD6Ab14feAE66D9b82EEbdD0d9A4eCAda0c44D260",
-    uniswapTwapLibrary:  "0xFBe83c6B4c135d5c64C5A72394120C7dEFec18EF",
+    vaultImplementation: "0x316D69E3CC1581c711A6C0063E922f2Aa041ccC9",
+    uniswapTwapLibrary:  "0xaB5f05Ae0B69bDd920d8B411938292dDA8bC0539",
     // Reference only — the app reads uniswapFactory from AssetRegistry
     // on-chain rather than trusting this, so a registry repoint can't leave
     // the UI pointed at a stale factory.

@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { useAccount, useChainId, useWriteContract, useWaitForTransactionReceipt, usePublicClient } from "wagmi";
+import { useAccount, useChainId, useReadContract, useWriteContract, useWaitForTransactionReceipt, usePublicClient } from "wagmi";
 import { parseUnits } from "viem";
 import { VAULT_FACTORY_ABI, ERC20_ABI } from "../config/abis.js";
 import { getContractsForChain } from "../config/contracts.js";
@@ -101,13 +101,35 @@ function MandateCard({ mandate: m, expanded, onToggle, contracts, publicClient, 
       ? (parsedPrincipal * BigInt(depositBps)) / 10000n
       : undefined;
 
+  // The protocol's own deposit floor, which is INDEPENDENT of the mandate's
+  // minimum and usually higher at the long end. It scales with the square root
+  // of term, so a mandate advertising a flat 15% minimum over a 1–30 day range
+  // is under the floor for most of that range — at 30 days a BlueChip loan
+  // needs ~31%. Validating against the mandate alone lets the borrower
+  // configure a fill that reverts.
+  const { data: tierFloor } = useReadContract({
+    address: contracts.vaultFactory,
+    abi: factoryAbi,
+    functionName: "quoteMinimumDeposit",
+    args: [parsedPrincipal ?? 0n, m.maxTier, BigInt(termSeconds || 0), true],
+    query: { enabled: Boolean(parsedPrincipal) && termSeconds > 0 },
+  });
+
   const termValid = termSeconds >= m.minTermSeconds && termSeconds <= m.maxTermSeconds;
   const sizeValid =
     parsedPrincipal !== undefined &&
     parsedPrincipal >= m.minPrincipal &&
     parsedPrincipal <= m.maxPrincipal &&
     parsedPrincipal <= m.fillable;
-  const depositValid = depositBps >= m.minDepositBps;
+
+  // Both floors bind; the effective one is whichever is higher.
+  const meetsMandate = depositBps >= m.minDepositBps;
+  const meetsFloor =
+    tierFloor === undefined || depositAmount === undefined || depositAmount >= tierFloor;
+  const floorPct =
+    tierFloor !== undefined && parsedPrincipal
+      ? (Number((tierFloor * 10000n) / parsedPrincipal) / 100).toFixed(1)
+      : null;
 
   const reason = !parsedPrincipal
     ? "Enter an amount to borrow."
@@ -117,8 +139,10 @@ function MandateCard({ mandate: m, expanded, onToggle, contracts, publicClient, 
     ? "Amount is outside this mandate's bounds."
     : !termValid
     ? "Term is outside this mandate's bounds."
-    : !depositValid
+    : !meetsMandate
     ? `Deposit must be at least ${m.minDepositBps / 100}%.`
+    : !meetsFloor
+    ? `A ${termDays}-day loan at this risk tier requires a ${floorPct}% deposit.`
     : null;
 
   async function fill() {
@@ -210,6 +234,15 @@ function MandateCard({ mandate: m, expanded, onToggle, contracts, publicClient, 
             <Line label="Rate at these terms" value={apr != null ? `${(apr / 100).toFixed(2)}% APR` : "—"} emphasis />
             {depositAmount !== undefined && (
               <Line label="Deposit you post" value={`${formatTokenAmount(depositAmount, m.decimals)} ${m.symbol}`} />
+            )}
+            {/* Shown always, not just on failure — the required deposit moves
+                with the term the borrower is choosing, and watching it climb
+                is the clearest available explanation of why. */}
+            {tierFloor !== undefined && tierFloor > 0n && (
+              <Line
+                label={`Required at ${termDays}d`}
+                value={`${formatTokenAmount(tierFloor, m.decimals)} ${m.symbol}${floorPct ? ` (${floorPct}%)` : ""}`}
+              />
             )}
             <Line
               label="Mandate expires"
