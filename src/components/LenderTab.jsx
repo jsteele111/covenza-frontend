@@ -5,6 +5,7 @@ import { KYC_REGISTRY_ABI, VAULT_FACTORY_ABI, ASSET_REGISTRY_ABI, ERC20_ABI } fr
 import { getContractsForChain, isPlaceholder, symbolForToken } from "../config/contracts.js";
 import { TIER_LABELS } from "../hooks/useVaultData.js";
 import { MandatePanel } from "./MandatePanel.jsx";
+import { useLenderBook } from "../hooks/useLenderBook.js";
 import { useLatestVault } from "../hooks/useLatestVault.js";
 import { useVaultData } from "../hooks/useVaultData.js";
 import { recommendedDeposit } from "../utils/deposit.js";
@@ -537,6 +538,8 @@ export function LenderTab() {
       </div>
       )}
 
+      <LenderBook vaults={allVaults} />
+
       {latestVaultAddress && (
         <div style={{ marginTop: 20 }}>
           <p style={{ fontSize: 11, color: "var(--parch-dim)", margin: "0 0 10px" }}>Your most recent vault</p>
@@ -556,6 +559,80 @@ export function LenderTab() {
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+/**
+ * The lender's book, per asset.
+ *
+ * Shortfall is given its own line whether or not it is zero. A dashboard that
+ * only shows a loss column once there is a loss teaches the reader that the
+ * absence of the column means safety, when it may only mean the reader has
+ * not looked. Zero stated plainly is the useful version.
+ */
+function LenderBook({ vaults }) {
+  const { book } = useLenderBook(vaults);
+  if (!book || book.length === 0) return null;
+
+  return (
+    <div style={{ marginTop: 20 }}>
+      <p style={{ fontSize: 11, color: "var(--parch-dim)", margin: "0 0 10px" }}>Your book</p>
+      <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+        {book.map((row) => (
+          <div key={row.symbol} style={cardStyle}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 10 }}>
+              <span className="mono" style={{ fontSize: 13, color: "var(--parch)" }}>{row.symbol}</span>
+              <span style={{ fontSize: 11, color: "var(--parch-dim)" }}>
+                {row.activeCount} active · {row.settledCount} settled
+              </span>
+            </div>
+
+            <BookRow
+              label="Outstanding principal"
+              value={`${formatTokenAmount(row.outstanding, row.decimals)} ${row.symbol}`}
+            />
+            <BookRow
+              label="Interest accruing on open loans"
+              value={`${formatTokenAmount(row.accruing, row.decimals)} ${row.symbol}`}
+            />
+            <BookRow
+              label="Interest realised on closed loans"
+              value={`${formatTokenAmount(row.interestEarned, row.decimals)} ${row.symbol}`}
+              emphasis
+            />
+            <BookRow
+              label="Drawn from the insurance pool"
+              value={`${formatTokenAmount(row.insuranceDrawn, row.decimals)} ${row.symbol}`}
+            />
+            <BookRow
+              label="Shortfall against what you were owed"
+              value={`${formatTokenAmount(row.shortfall, row.decimals)} ${row.symbol}`}
+              alert={row.shortfall > 0n}
+            />
+
+            {row.shortfall === 0n && row.settledCount > 0 && (
+              <p style={{ fontSize: 11, color: "var(--parch-dim)", margin: "8px 0 0", lineHeight: 1.5 }}>
+                Every closed loan returned your principal and interest in full — losses were
+                absorbed by borrower deposits before reaching you.
+              </p>
+            )}
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function BookRow({ label, value, emphasis, alert }) {
+  return (
+    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 12, padding: "3px 0" }}>
+      <span style={{ fontSize: 12, color: "var(--parch-dim)" }}>{label}</span>
+      <span className="mono" style={{
+        fontSize: 12,
+        color: alert ? "var(--brick)" : emphasis ? "var(--brass)" : "var(--parch)",
+        fontWeight: emphasis || alert ? 600 : 400,
+      }}>{value}</span>
     </div>
   );
 }
