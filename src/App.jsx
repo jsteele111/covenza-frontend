@@ -27,7 +27,7 @@ export default function App() {
 
 function Shell() {
   const { isConnected } = useAccount();
-  const { roles, isLoading, hasAnyRole } = useWalletRole();
+  const { roles, isLoading, hasAnyRole, hasEstablishedRole } = useWalletRole();
   const location = useLocation();
   const navigate = useNavigate();
 
@@ -37,12 +37,15 @@ function Shell() {
   // lender over borrower, since it's the rarer, more privileged role;
   // the switcher (if more than one role applies) lets the person move
   // freely from there regardless of which one they land on first.
+  // Keyed on hasEstablishedRole, not hasAnyRole: every connected wallet can
+  // lend, so redirecting on capability would drop a first-time visitor onto
+  // the lender form and hide the borrower onboarding path entirely.
   useEffect(() => {
-    if (isLoading || !hasAnyRole) return;
+    if (isLoading || !hasEstablishedRole) return;
     if (location.pathname !== "/") return;
     const primary = ROLE_PRIORITY.find((r) => roles.includes(r));
     if (primary) navigate(`/${primary}`, { replace: true });
-  }, [isLoading, hasAnyRole, roles, location.pathname, navigate]);
+  }, [isLoading, hasEstablishedRole, roles, location.pathname, navigate]);
 
   const isWide = hasAnyRole || location.pathname === "/dashboard";
 
@@ -91,7 +94,7 @@ function Shell() {
             <Route
               path="/lender"
               element={
-                <GuardedRoute allowed={roles.includes("lender")}>
+                <GuardedRoute allowed={roles.includes("lender")} isLoading={isLoading}>
                   <RouteErrorBoundary><LenderTab /></RouteErrorBoundary>
                 </GuardedRoute>
               }
@@ -99,7 +102,7 @@ function Shell() {
             <Route
               path="/borrower"
               element={
-                <GuardedRoute allowed={roles.includes("borrower")}>
+                <GuardedRoute allowed={roles.includes("borrower")} isLoading={isLoading}>
                   <RouteErrorBoundary><BorrowerTab /></RouteErrorBoundary>
                 </GuardedRoute>
               }
@@ -107,7 +110,7 @@ function Shell() {
             <Route
               path="/operator"
               element={
-                <GuardedRoute allowed={roles.includes("operator")}>
+                <GuardedRoute allowed={roles.includes("operator")} isLoading={isLoading}>
                   <RouteErrorBoundary><OperatorTab /></RouteErrorBoundary>
                 </GuardedRoute>
               }
@@ -128,7 +131,13 @@ function Shell() {
  * real enforcement; the operator route being unlinked from the landing
  * page is just the social nicety on top of it, not the actual guard.
  */
-function GuardedRoute({ allowed, children }) {
+function GuardedRoute({ allowed, isLoading, children }) {
+  // Roles arrive from chain reads, so on a cold load into a deep link they
+  // are briefly empty. Redirecting on that transient state bounced anyone
+  // who opened /lender directly — a refresh, a bookmark, a shared link —
+  // back out before the answer had arrived. Absence of a role is only
+  // meaningful once the read has actually completed.
+  if (isLoading) return null;
   if (!allowed) return <Navigate to="/" replace />;
   return children;
 }

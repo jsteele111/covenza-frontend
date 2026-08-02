@@ -25,13 +25,18 @@ const DAY = 86400;
  * the longest term and smallest deposit is what everyone picks; here it is the
  * most expensive combination on the surface.
  */
-export function MandateBoard() {
+export function MandateBoard({ onFilled }) {
   const { address } = useAccount();
   const chainId = useChainId();
   const contracts = getContractsForChain(chainId);
   const publicClient = usePublicClient();
 
   const { mandates, isLoading, refetch } = useMandates({ onlyLive: true });
+
+  function handleFilled() {
+    refetch();
+    onFilled?.();
+  }
   const [selected, setSelected] = useState(null);
 
   if (isLoading) {
@@ -58,7 +63,7 @@ export function MandateBoard() {
           onToggle={() => setSelected(selected === m.id ? null : m.id)}
           contracts={contracts}
           publicClient={publicClient}
-          onFilled={refetch}
+          onFilled={handleFilled}
         />
       ))}
     </div>
@@ -76,10 +81,23 @@ function MandateCard({ mandate: m, expanded, onToggle, contracts, publicClient, 
   const [step, setStep] = useState("idle");
 
   const { writeContract, data: hash, isPending, error, reset } = useWriteContract();
-  const { isLoading: isConfirming, isSuccess } = useWaitForTransactionReceipt({ hash });
+  const { data: receipt, isLoading: isConfirming } = useWaitForTransactionReceipt({ hash });
+
+  // isSuccess on this hook means the RECEIPT was fetched, not that the
+  // transaction did what it was asked. A reverted fill produces a perfectly
+  // good receipt with status "reverted", which would otherwise advance the
+  // step machine and report a loan that does not exist.
+  const [reverted, setReverted] = useState(false);
 
   useEffect(() => {
-    if (!isSuccess) return;
+    if (!receipt) return;
+    if (receipt.status !== "success") {
+      setReverted(true);
+      setStep("idle");
+      reset();
+      return;
+    }
+    setReverted(false);
     if (step === "approving") {
       setStep("approved");
     } else if (step === "filling") {
@@ -87,7 +105,7 @@ function MandateCard({ mandate: m, expanded, onToggle, contracts, publicClient, 
       onFilled();
     }
     reset();
-  }, [isSuccess]);
+  }, [receipt]);
 
   const approving = step === "approved";
 
@@ -209,8 +227,13 @@ function MandateCard({ mandate: m, expanded, onToggle, contracts, publicClient, 
             min deposit {m.minDepositBps / 100}% · up to {m.maxTierLabel}
           </p>
         </div>
+        {/* Priced at the mandate's OWN advertised minimum deposit and shortest
+            term — the cheapest terms actually on offer. Showing minAprBps here
+            advertised a rate reachable only with a deposit several times the
+            stated minimum, which is the headline-rate trick this protocol has
+            no business playing. */}
         <span style={{ fontSize: 11, color: "var(--brass)", border: "1px solid var(--brass)", borderRadius: 20, padding: "3px 9px" }}>
-          from {(m.minAprBps / 100).toFixed(2)}% APR
+          from {(previewMandateApr(m, m.minTermSeconds, m.minDepositBps) / 100).toFixed(2)}% APR
         </span>
       </div>
 
@@ -263,6 +286,14 @@ function MandateCard({ mandate: m, expanded, onToggle, contracts, publicClient, 
             Filling moves everything in one transaction — the lender's principal, your
             deposit and the insurance premium. Either all of it settles or none of it does.
           </p>
+
+          {reverted && !error && (
+            <p style={{ fontSize: 12, color: "var(--brick)", marginTop: 8 }}>
+              The transaction was mined but reverted — nothing moved. The mandate's
+              terms may have changed, or the lender's allowance may have been withdrawn,
+              since this quote was read.
+            </p>
+          )}
 
           {error && (
             <p style={{ fontSize: 12, color: "var(--brick)", marginTop: 8 }}>

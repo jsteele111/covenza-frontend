@@ -41,7 +41,11 @@ export function MandatePanel({ selectedAsset, selectedSymbol, decimals }) {
   const [minApr, setMinApr]             = useState("5");
 
   const { writeContract, data: hash, isPending, error, reset } = useWriteContract();
-  const { isLoading: isConfirming, isSuccess } = useWaitForTransactionReceipt({ hash });
+  const { data: receipt, isLoading: isConfirming } = useWaitForTransactionReceipt({ hash });
+
+  // See MandateBoard: a reverted transaction still yields a receipt, so
+  // liveness has to be read off the status rather than off the query.
+  const isSuccess = receipt?.status === "success";
 
   // Capacity, not intent. A mandate is only fillable up to
   // min(allowance, balance) — publishing terms without an allowance produces a

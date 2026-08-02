@@ -205,7 +205,10 @@ export function BorrowerTab() {
             deposit, and the loan opens in a single transaction.
           </p>
         </div>
-        <MandateBoard />
+        {/* A fill creates this borrower's first vault, which is what this
+            branch is testing for — so the vault list has to be re-read or the
+            board keeps showing until a manual reload. */}
+        <MandateBoard onFilled={refetchVaultList} />
       </div>
     );
   }

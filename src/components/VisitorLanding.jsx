@@ -13,11 +13,11 @@ export function VisitorLanding() {
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
         <InfoCard
           title="Become a lender"
-          body="Connect a wallet to originate a vault for a verified borrower."
+          body="Publish the terms you'll lend on and let borrowers take them, or originate directly for a borrower you know."
         />
         <InfoCard
           title="Get verified to borrow"
-          body="Complete identity verification, then ask a lender to originate a vault for you."
+          body="Complete identity verification, then take any published mandate that suits you — no introduction needed."
         />
       </div>
 
