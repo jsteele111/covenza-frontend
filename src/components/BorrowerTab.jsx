@@ -4,6 +4,7 @@ import { parseUnits, formatUnits } from "viem";
 import { KYC_REGISTRY_ABI, ERC20_ABI, ASSET_REGISTRY_ABI } from "../config/abis.js";
 import { getContractsForChain, isPlaceholder, symbolForToken } from "../config/contracts.js";
 import { useLatestVault } from "../hooks/useLatestVault.js";
+import { useVaultSelection } from "../hooks/useVaultSelection.js";
 import { useSwapPreflight } from "../hooks/useSwapPreflight.js";
 import { useVaultData } from "../hooks/useVaultData.js";
 import { useVaultAction } from "../hooks/useVaultAction.js";
@@ -72,7 +73,15 @@ export function BorrowerTab() {
     query: { enabled: Boolean(address), refetchInterval: 8000 },
   });
 
-  const { latestVaultAddress, refetch: refetchVaultList } = useLatestVault(address, "borrower");
+  const { allVaults, refetch: refetchVaultList } = useLatestVault(address, "borrower");
+  const {
+    vaults: vaultList,
+    activeCount,
+    selected: latestVaultAddress,
+    select: selectVault,
+    refetch: refetchVaultStatuses,
+  } = useVaultSelection(allVaults);
+
   const { vault, refetch: refetchVaultData } = useVaultData(latestVaultAddress);
   const { heldAssets, refetch: refetchHeldAssets } = useHeldAssets(
     latestVaultAddress,
@@ -235,7 +244,7 @@ export function BorrowerTab() {
         {/* A fill creates this borrower's first vault, which is what this
             branch is testing for — so the vault list has to be re-read or the
             board keeps showing until a manual reload. */}
-        <MandateBoard onFilled={refetchVaultList} />
+        <MandateBoard onFilled={() => { refetchVaultList(); refetchVaultStatuses(); }} />
       </div>
     );
   }
@@ -342,23 +351,49 @@ export function BorrowerTab() {
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+      {/* Only shown once there is a choice to make. A single loan needs no
+          switcher, and settled loans are labelled so the borrower is not
+          asked to tell them apart by address. */}
+      {vaultList.length > 1 && (
+        <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center" }}>
+          {vaultList.map((v) => {
+            const active = v.address === latestVaultAddress;
+            return (
+              <button
+                key={v.address}
+                type="button"
+                onClick={() => selectVault(v.address)}
+                style={{
+                  border: `1px solid ${active ? "var(--brass)" : "var(--hairline)"}`,
+                  background: active ? "var(--brass)" : "transparent",
+                  color: active ? "#1C1C1A" : "var(--parch-dim)",
+                  borderRadius: 6, padding: "5px 12px", fontSize: 11,
+                  cursor: "pointer", fontWeight: active ? 600 : 400,
+                }}
+              >
+                {v.label}{v.isSettled ? " · settled" : ""}
+              </button>
+            );
+          })}
+        </div>
+      )}
+
       <VaultStatement vault={vault} />
 
-      {/* A settled vault is history, not a state to be stuck in. Repaying one
-          loan should not remove the means of taking the next — so the board
-          comes back as soon as this vault closes. The panels below stay
-          visible as the record of what was just settled. */}
-      {vault.isSettled && (
+      {/* Keyed on having no ACTIVE loan anywhere, not on this vault being
+          settled — otherwise merely looking at an old closed loan would offer
+          to open another while one is already running. */}
+      {activeCount === 0 && (
         <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
           <div>
             <p style={{ fontSize: 13, fontWeight: 600, color: "var(--parch)", margin: "0 0 4px" }}>
               Borrow again
             </p>
             <p style={{ fontSize: 11, color: "var(--parch-dim)", margin: 0, lineHeight: 1.5 }}>
-              This loan is closed. Any live mandate can be filled straight away.
+              Nothing outstanding. Any live mandate can be filled straight away.
             </p>
           </div>
-          <MandateBoard onFilled={refetchVaultList} />
+          <MandateBoard onFilled={() => { refetchVaultList(); refetchVaultStatuses(); }} />
         </div>
       )}
 
