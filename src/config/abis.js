@@ -51,6 +51,15 @@ export const KYC_REGISTRY_ABI = parseAbi([
   "function addAttester(address key, string name, string url) external",
   "function removeAttester(address key) external",
   "function rotateAttester(address oldKey, address newKey) external",
+
+  // Recognising a provider is announce-then-execute. Removal is not — a delay
+  // on revoking a compromised key would make the timelock the vulnerability.
+  "function queueAddAttester(address key, string name, string url) external",
+  "function cancelAddAttester(address key, string name, string url) external",
+  "function timelockDelay() view returns (uint256)",
+  "function queuedAt(bytes32 id) view returns (uint256)",
+  "function isExecutable(bytes32 id) view returns (bool)",
+  "function timeUntilExecutable(bytes32 id) view returns (uint256)",
 ]);
 
 export const VAULT_FACTORY_ABI = parseAbi([

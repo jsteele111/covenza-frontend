@@ -1,6 +1,6 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useMemo, useCallback } from "react";
 import { useAccount, useChainId, useReadContract, useReadContracts, useWriteContract, useWaitForTransactionReceipt, usePublicClient } from "wagmi";
-import { parseAbiItem, parseUnits, isAddress } from "viem";
+import { parseAbiItem, parseUnits, isAddress, keccak256, encodeAbiParameters } from "viem";
 import { KYC_REGISTRY_ABI, ASSET_REGISTRY_ABI, INSURANCE_POOL_ABI, ERC20_ABI } from "../config/abis.js";
 import { getContractsForChain, isPlaceholder, symbolForToken } from "../config/contracts.js";
 import { shortAddress, formatTokenAmount } from "../utils/format.js";
@@ -315,6 +315,18 @@ export function OperatorTab() {
   );
 }
 
+/** Whole units, largest first — "2d 4h" reads faster than 187200 seconds. */
+function formatDuration(seconds) {
+  if (seconds <= 0) return "now";
+  const d = Math.floor(seconds / 86400);
+  const h = Math.floor((seconds % 86400) / 3600);
+  const m = Math.floor((seconds % 3600) / 60);
+  if (d > 0) return `${d}d ${h}h`;
+  if (h > 0) return `${h}h ${m}m`;
+  if (m > 0) return `${m}m`;
+  return `${seconds}s`;
+}
+
 // --- Recognised identity providers ---
 
 /**
@@ -341,11 +353,54 @@ function AttesterPanel() {
   const { writeContract, data: hash, isPending, error, reset } = useWriteContract();
   const { data: receipt } = useWaitForTransactionReceipt({ hash });
 
+  // Cleared only on the EXECUTE leg. After queueing, the fields stay filled —
+  // executing needs the identical arguments, and making the operator retype
+  // them from memory a day later is how the wrong provider gets recognised.
   useEffect(() => {
     if (receipt?.status === "success") {
-      setKey(""); setName(""); setUrl(""); setPending(null); reset();
+      if (pending === "add") { setKey(""); setName(""); setUrl(""); }
+      setPending(null);
+      reset();
     }
   }, [receipt]);
+
+  // The queue id must match the contract's, which hashes a tag alongside the
+  // arguments so an approval cannot be replayed against a different action.
+  const pendingId = useMemo(() => {
+    if (!isAddress(key)) return null;
+    return keccak256(encodeAbiParameters(
+      [{ type: "string" }, { type: "address" }, { type: "string" }, { type: "string" }],
+      ["addAttester", key, name, url]
+    ));
+  }, [key, name, url]);
+
+  const { data: queuedTs, refetch: refetchQueued } = useReadContract({
+    address: contracts.kycRegistry,
+    abi: KYC_REGISTRY_ABI,
+    functionName: "queuedAt",
+    args: [pendingId ?? "0x".padEnd(66, "0")],
+    query: { enabled: Boolean(pendingId), refetchInterval: 10000 },
+  });
+
+  const { data: secondsLeft } = useReadContract({
+    address: contracts.kycRegistry,
+    abi: KYC_REGISTRY_ABI,
+    functionName: "timeUntilExecutable",
+    args: [pendingId ?? "0x".padEnd(66, "0")],
+    query: { enabled: Boolean(pendingId) && Number(queuedTs ?? 0) > 0, refetchInterval: 5000 },
+  });
+
+  const { data: delay } = useReadContract({
+    address: contracts.kycRegistry,
+    abi: KYC_REGISTRY_ABI,
+    functionName: "timelockDelay",
+    query: { enabled: !legacy },
+  });
+
+  useEffect(() => { if (receipt?.status === "success") refetchQueued(); }, [receipt]);
+
+  const isQueued = Number(queuedTs ?? 0) > 0;
+  const isMature = isQueued && Number(secondsLeft ?? 0) === 0;
 
   async function send(functionName, args, label) {
     setPending(label);
@@ -402,18 +457,59 @@ function AttesterPanel() {
           telling people where to find them are one decision.
         </p>
 
-        <ActionButton
-          label="Recognise provider"
-          primary={valid}
-          disabled={!valid || busy}
-          disabledReason={
-            !isAddress(key) ? "Enter a valid signing key."
-              : !name.trim() ? "Name it — an unnamed attester cannot be audited."
-              : "Give the URL borrowers should be sent to."
-          }
-          loading={pending === "add"}
-          onClick={() => send("addAttester", [key, name.trim(), url.trim()], "add")}
-        />
+        {/* Announce-then-execute. The delay is what makes a hostile addition
+            visible before it takes effect, so the pending state is shown
+            rather than hidden behind a spinner — a delay nobody can observe
+            protects nobody. */}
+        {!isQueued && (
+          <ActionButton
+            label={delay && Number(delay) > 0
+              ? `Announce provider — live in ${formatDuration(Number(delay))}`
+              : "Announce provider"}
+            primary={valid}
+            disabled={!valid || busy}
+            disabledReason={
+              !isAddress(key) ? "Enter a valid signing key."
+                : !name.trim() ? "Name it — an unnamed attester cannot be audited."
+                : "Give the URL borrowers should be sent to."
+            }
+            loading={pending === "queue"}
+            onClick={() => send("queueAddAttester", [key, name.trim(), url.trim()], "queue")}
+          />
+        )}
+
+        {isQueued && (
+          <div style={{
+            border: "1px solid var(--brass)", borderRadius: 8,
+            padding: "12px 14px", marginTop: 4,
+          }}>
+            <p style={{ fontSize: 12, color: "var(--brass)", margin: "0 0 4px", fontWeight: 600 }}>
+              {isMature ? "Ready to recognise" : "Announced — waiting"}
+            </p>
+            <p style={{ fontSize: 11, color: "var(--parch-dim)", margin: "0 0 10px", lineHeight: 1.5 }}>
+              {isMature
+                ? "The delay has elapsed. Executing uses exactly these arguments — changing any field means announcing again."
+                : `Executable in ${formatDuration(Number(secondsLeft ?? 0))}. Anyone watching this contract can see it pending, which is the point.`}
+            </p>
+            <div style={{ display: "flex", gap: 8 }}>
+              <ActionButton
+                label="Recognise provider"
+                primary={isMature}
+                disabled={!isMature || busy}
+                disabledReason="The timelock has not elapsed."
+                loading={pending === "add"}
+                onClick={() => send("addAttester", [key, name.trim(), url.trim()], "add")}
+              />
+              <button
+                onClick={() => send("cancelAddAttester", [key, name.trim(), url.trim()], "cancel")}
+                disabled={busy}
+                style={smallDangerButtonStyle}
+              >
+                Abandon
+              </button>
+            </div>
+          </div>
+        )}
 
         {error && (
           <p style={{ fontSize: 12, color: "var(--brick)", marginTop: 10 }}>

@@ -49,14 +49,17 @@ const CONTRACTS_BY_CHAIN = {
   // still settle on-chain but no longer appear in the lender view, which
   // scopes its lookups to the current factory.
   46630: {
-    // Attester-based: recognises attestations issued by third-party identity
-    // providers rather than trusting a single key Covenza controls. Verified
-    // status did not carry over from the previous registry, deliberately —
-    // those records asserted that our own key had signed for a wallet.
-    kycRegistry:   "0x2A921Bd852CA4E22ef73A7772706771A1e4586E1",
-    assetRegistry: "0x71FFe1CA1D087c2b72F661CB7F75172ce25badfd",
-    insurancePool: "0xcC56F8560678ebd2a8708D5181C11e3a3faFed07",
-    vaultFactory:  "0xdD04fd410B2Ea44E44931C8fdb8248B6B96BA8F5",
+    // Full-stack redeploy carrying the mainnet-readiness fixes: tier history
+    // on the asset registry (so re-tagging an asset cannot widen a live loan)
+    // and timelocks on the three admin actions that increase risk.
+    //
+    // Nothing carried over. Verified status, the insurance reserve and vault
+    // history all restart — every contract changed constructor arity, so this
+    // could not be a partial upgrade.
+    kycRegistry:   "0x78628208bA989D9d294B1457Fc51706A80274E90",
+    assetRegistry: "0xC493034B826F92414E2FB44b4ad8874751040160",
+    insurancePool: "0xf61aCE1EE920Bf0d0d0B9825712482CbF5132c25",
+    vaultFactory:  "0x58022875D7F215307455aCda04b721c82D8727Ad",
     treasury:      "0x2e6075b0B10c747357C2Bd58075af5e471f1f5F3",
     tokens: {
       tUSDG: "0xF727a9E9813d884bfFf2Be906633f4C5C963DC99",
@@ -70,8 +73,8 @@ const CONTRACTS_BY_CHAIN = {
     // Vaults are EIP-1167 clones of this implementation, which is deployed once
     // and never initialised. Recorded because a clone carries no code of its
     // own — point a contract verifier at the implementation, not at a vault.
-    vaultImplementation: "0x316D69E3CC1581c711A6C0063E922f2Aa041ccC9",
-    uniswapTwapLibrary:  "0xaB5f05Ae0B69bDd920d8B411938292dDA8bC0539",
+    vaultImplementation: "0x5d0d415409EdCEA0886704EcAa507D01037E68CF",
+    uniswapTwapLibrary:  "0x33FAE0012f8834908850F15Be6EeFc51DA3014a9",
     // Reference only — the app reads uniswapFactory from AssetRegistry
     // on-chain rather than trusting this, so a registry repoint can't leave
     // the UI pointed at a stale factory.
