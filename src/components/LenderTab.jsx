@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { useAccount, useChainId, useReadContract, useWriteContract, useWaitForTransactionReceipt, usePublicClient } from "wagmi";
 import { parseUnits, isAddress } from "viem";
-import { KYC_REGISTRY_ABI, VAULT_FACTORY_ABI, ASSET_REGISTRY_ABI, ERC20_ABI } from "../config/abis.js";
+import { KYC_REGISTRY_ABI, VAULT_FACTORY_ABI, ASSET_REGISTRY_ABI, ERC20_ABI, INSURANCE_POOL_ABI } from "../config/abis.js";
 import { getContractsForChain, isPlaceholder, symbolForToken } from "../config/contracts.js";
 import { TIER_LABELS } from "../hooks/useVaultData.js";
 import { MandatePanel } from "./MandatePanel.jsx";
@@ -155,6 +155,15 @@ export function LenderTab() {
     functionName: "quoteInsuranceSkim",
     args: quoteArgs,
     query: { enabled: quotesReady },
+  });
+
+  // The lender is paying a skim for insurance, so the limit of that insurance
+  // belongs next to the price of it. Read live rather than hardcoded — the cap
+  // is operator-configurable and a stale number here would be a false promise.
+  const { data: drawCapBps } = useReadContract({
+    address: contracts.insurancePool,
+    abi: INSURANCE_POOL_ABI,
+    functionName: "drawCapBps",
   });
 
   // Deposit floor rises with the SQUARE ROOT of term and with the tier's
@@ -481,6 +490,26 @@ export function LenderTab() {
             maximum exposure before any loss can occur.</>
           )}
         </p>
+
+        {/* What the insurance does NOT cover, stated before origination rather
+            than discovered at settlement.
+
+            One configured number currently does two unrelated jobs: it rations
+            the pool when many lenders claim at once, AND it caps how much any
+            single lender is protected for at all. The second is the one a
+            lender needs to know, and nothing on screen said it. A lender
+            reading "insurance pool" reasonably assumes it covers the loss;
+            beyond this fraction of principal, it does not. */}
+        {drawCapBps != null && (
+          <p style={{ fontSize: 11, color: "var(--parch-dim)", margin: "-4px 0 12px", lineHeight: 1.5 }}>
+            <strong>What the pool covers.</strong> After the borrower's deposit is
+            exhausted, the pool pays at most{" "}
+            <strong>{Number(drawCapBps) / 100}% of principal</strong> on this loan.
+            A larger loss is yours. The cap applies per settlement regardless of how
+            full the pool is, so it limits your protection rather than merely
+            rationing a depleted reserve.
+          </p>
+        )}
 
         {/* Time-weighting interest shrinks the buffer that absorbs a loss before
             the deposit is touched. On a very short loan that buffer is close to
