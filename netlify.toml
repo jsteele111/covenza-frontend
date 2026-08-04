@@ -1,14 +1,16 @@
 [build]
   command = "npm run build"
   publish = "dist"
-  functions = "netlify/functions"
 
 # Added for Group E: real routes (/lender, /borrower, /operator) mean a
 # direct visit or page refresh on any of those paths would otherwise hit
 # Netlify's static file server and 404 (no actual /lender file exists).
 # This catch-all hands every non-asset path to index.html so React
-# Router can take over client-side. Netlify Functions (the KYC verifier)
-# are unaffected — they're matched and served before this rule applies.
+# Router can take over client-side.
+#
+# There are no Netlify Functions any more. The KYC verifier was removed on
+# 4 August 2026 — Covenza reads attestations from recognised third parties and
+# runs no signing service of its own.
 [[redirects]]
   from = "/*"
   to = "/index.html"

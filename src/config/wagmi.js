@@ -1,5 +1,5 @@
 import { getDefaultConfig } from "@rainbow-me/rainbowkit";
-import { arbitrumSepolia, hardhat } from "wagmi/chains";
+import { hardhat } from "wagmi/chains";
 import { http } from "wagmi";
 import { defineChain } from "viem";
 
@@ -43,10 +43,6 @@ export const robinhoodMainnet = defineChain({
 const WALLETCONNECT_PROJECT_ID =
   import.meta.env.VITE_WALLETCONNECT_PROJECT_ID || "";
 
-// Optional: point at your own Alchemy RPC (same one from your backend's
-// .env) for more reliable reads. Falls back to a public RPC if not set.
-const RPC_URL = import.meta.env.VITE_ARBITRUM_SEPOLIA_RPC_URL || "";
-
 // The public Robinhood RPC drops long-lived connections, which showed up as
 // undici header timeouts during backend scripting. An Alchemy endpoint here
 // is worth setting before any demo you care about.
@@ -55,14 +51,13 @@ const ROBINHOOD_RPC_URL = import.meta.env.VITE_ROBINHOOD_TESTNET_RPC_URL || "";
 export const wagmiConfig = getDefaultConfig({
   appName: "Covenza",
   projectId: WALLETCONNECT_PROJECT_ID,
-  // Robinhood testnet first, so it is the default the app opens on. Arbitrum
-  // Sepolia stays listed rather than being removed — the earlier deployment is
-  // still live and settleable, and dropping it would orphan those vaults in
-  // the UI.
-  chains: [robinhoodTestnet, arbitrumSepolia, hardhat],
+  // Robinhood Chain only. Arbitrum Sepolia was dropped on 4 August 2026: that
+  // deployment predates risk tiers and mandates, so this app's calls do not
+  // exist there. Offering the network meant offering a chain on which every
+  // read returns empty — which looks like a broken app, not an unsupported one.
+  chains: [robinhoodTestnet, hardhat],
   transports: {
     [robinhoodTestnet.id]: ROBINHOOD_RPC_URL ? http(ROBINHOOD_RPC_URL) : http(),
-    [arbitrumSepolia.id]: RPC_URL ? http(RPC_URL) : http(),
     [hardhat.id]: http("http://127.0.0.1:8545"),
   },
   ssr: false,

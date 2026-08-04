@@ -6,10 +6,19 @@ import { useAttesters } from "../hooks/useAttesters.js";
 
 const kycAbi = KYC_REGISTRY_ABI;
 
-// A local signing service, for testnet only. Unset in any real deployment —
-// its presence is what puts the simulated path on screen, and the screen says
-// so rather than letting a demo badge pass for a real check.
-const MOCK_VERIFIER_URL = import.meta.env.VITE_VERIFIER_SERVICE_URL || "";
+// A local signing service, for development only.
+//
+// Gated on import.meta.env.DEV as well as the variable, so a production build
+// cannot show it whatever the host's environment says. Relying on "unset it in
+// production" was not good enough: the variable WAS set on the deployed site,
+// pointing at a serverless function that signed attestations against a registry
+// on a chain this app no longer supports. Nobody had unset anything, because
+// nobody had to remember to until it mattered.
+//
+// A build-time guard cannot be forgotten. An environment variable can.
+const MOCK_VERIFIER_URL = import.meta.env.DEV
+  ? (import.meta.env.VITE_VERIFIER_SERVICE_URL || "")
+  : "";
 
 /**
  * The borrowing gate.

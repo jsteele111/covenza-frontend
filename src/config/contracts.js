@@ -87,23 +87,21 @@ const CONTRACTS_BY_CHAIN = {
       router:  "0x70Ce56aFf68cD3C5352c66C665B37258915b3F14",
       pool:    "0x44A3024740aCDFe744500A606a8B3552717B5B76", // tUSDG/tWETH 0.3%
     },
-    yieldVenue4626: "0x7bd0860C36be9d101483920d6c8230Dd0fcf713E", // over tUSDG
+    yieldVenue4626: "0xB37AEf9CaE1d6127462DAe00CA80bA567d6abbeE", // over tUSDG — a MOCK
   },
 
-  // Arbitrum Sepolia (chain id 421614)
-  421614: {
-    kycRegistry:   "0x842629E4C953De726946Db5886e50d4840F61FC4", // unchanged in v2 (contract not modified)
-    assetRegistry: "0x8DB2d815caD86eABF217205523621603F712aAE5",
-    insurancePool: "0x11D4f02FA69D0352fb01725d822Fb05C54AD6e41",
-    vaultFactory:  "0x36DD23EBE221e30f9a71451F3a49F8cAd26c55Ab",  // v2.1 — protocol fee
-    treasury:      "0x2e6075b0B10c747357C2Bd58075af5e471f1f5F3",
-    tokens: {
-      WETH: "0xd5f3F5005810369f59e987D31c58ac45C7a0F1b0",
-      WBTC: "0x6166892794FBAE7fC907ceB4578572Ff7B5151A1",
-      USDC: "0x31cF3D11803A94A3aE17B0cD8f2Bc89E7d93D105",
-      USDT: "0xdF3B2A5E1319b03fB29E6CF5774D54E55f2E221a",
-    },
-  },
+  // Arbitrum Sepolia (421614) was removed on 4 August 2026.
+  //
+  // Not because the deployment is gone — it is still on chain and its vaults
+  // are still settleable. Because this frontend can no longer speak to it. That
+  // stack predates risk tiers and mandates, so the calls this app now makes
+  // (tierOf, highestTierSince, the whole mandate surface) do not exist there.
+  //
+  // Leaving it listed offered a wallet the chance to switch to a chain where
+  // every read returns empty and every write reverts, which reads as a broken
+  // app rather than an unsupported network. Settling a legacy Sepolia vault is
+  // a scripting job against that stack's own ABI, not something this interface
+  // can honestly present.
   // Local Hardhat node (chain id 31337) — not yet deployed, see header note.
   31337: {
     kycRegistry:   PLACEHOLDER,
