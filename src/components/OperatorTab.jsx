@@ -572,6 +572,12 @@ function AssetWhitelistPanel() {
   const [newVenue, setNewVenue] = useState(VENUE_NONE);
   const [newVenueAddress, setNewVenueAddress] = useState("");
   const [newGraceHours, setNewGraceHours] = useState("0");
+
+  // Defaults to Speculative, matching the registry. An unassessed asset should
+  // start at the most constrained tier and be relaxed deliberately — the
+  // opposite arrangement made "nobody has looked at this" and "safest" the
+  // same state.
+  const [newTier, setNewTier] = useState(2);
   const [pendingAsset, setPendingAsset] = useState(null); // "new" | address | null
 
   // Set when the operator has seen "no quotable pair" and wants to proceed
@@ -697,13 +703,18 @@ function AssetWhitelistPanel() {
       writeContract({
         address: contracts.assetRegistry,
         abi: assetRegistryAbi,
-        functionName: "addAssetWithVenue",
+        // Lists and tags in one transaction. addAssetWithVenue would leave the
+        // asset at the registry's default — now Speculative — until a second
+        // transaction moved it, which is safe but means the tier the operator
+        // chose is briefly not the tier in force.
+        functionName: "addAssetWithTier",
         args: [
           newAsset,
           newAToken || ZERO_ADDRESS,
           newVenue,
           newVenue === VENUE_4626 ? newVenueAddress : ZERO_ADDRESS,
           BigInt(Math.round(Number(newGraceHours || 0) * 3600)),
+          newTier,
         ],
         maxFeePerGas: fees.maxFeePerGas * 2n,
         maxPriorityFeePerGas: fees.maxPriorityFeePerGas,
@@ -798,6 +809,32 @@ function AssetWhitelistPanel() {
           The extension only ever lengthens the global swap-back grace, and applies to
           vaults <em>holding</em> this asset. Leave it at zero for anything continuously
           traded; a tokenised equity trades 24/5, so 72 hours covers a weekend.
+        </p>
+
+        <Field label="Risk tier">
+          <div style={{ display: "inline-flex", background: "var(--ink)", border: "1px solid var(--hairline)", borderRadius: 8, padding: 3 }}>
+            {[0, 1, 2].map((t) => (
+              <button
+                key={t}
+                type="button"
+                onClick={() => setNewTier(t)}
+                style={{
+                  border: "none", borderRadius: 6, padding: "6px 14px", fontSize: 12, cursor: "pointer",
+                  background: newTier === t ? "var(--brass)" : "transparent",
+                  color: newTier === t ? "#1C1C1A" : "var(--parch-dim)",
+                  fontWeight: newTier === t ? 600 : 400,
+                }}
+              >
+                {TIER_LABELS[t]}
+              </button>
+            ))}
+          </div>
+        </Field>
+        <p style={{ ...preflightNoteStyle, margin: "-4px 0 12px" }}>
+          Set with the listing, in one transaction. Defaults to Speculative: an asset
+          nobody has assessed should start at the most constrained tier and be relaxed
+          deliberately. The tier decides the deposit floor, the exposure cap and the
+          maximum term, so it is the substance of the listing rather than a label on it.
         </p>
 
         <PreflightReport preflight={preflight} />

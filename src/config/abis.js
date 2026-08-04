@@ -233,6 +233,12 @@ export const ASSET_REGISTRY_ABI = parseAbi([
   "event TierConfigUpdated(uint8 indexed tier, uint256 assumedVolBps, uint256 minDepositBps, uint256 maxTermSeconds, uint256 maxExposureBps, uint256 insurancePremiumBps)",
   "function addAsset(address asset, address aToken) external",
   "function addAssetWithVenue(address asset, address aToken, uint8 venue, address venueAddress, uint256 gracePeriod) external",
+  // Lists and tags atomically. Without it an asset sits at the registry
+  // default until a second transaction, so the tier chosen is briefly not the
+  // tier in force.
+  "function addAssetWithTier(address asset, address aToken, uint8 venue, address venueAddress, uint256 gracePeriod, uint8 tier) external",
+  "function tierHistoryLength(address asset) view returns (uint256)",
+  "function highestTierSince(address asset, uint256 since) view returns (uint8)",
   "function setVenue(address asset, uint8 venue, address venueAddress) external",
   "function setGracePeriod(address asset, uint256 gracePeriod) external",
   "function removeAsset(address asset) external",
