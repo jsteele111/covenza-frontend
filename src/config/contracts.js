@@ -49,17 +49,21 @@ const CONTRACTS_BY_CHAIN = {
   // still settle on-chain but no longer appear in the lender view, which
   // scopes its lookups to the current factory.
   46630: {
-    // Full-stack redeploy carrying the mainnet-readiness fixes: tier history
-    // on the asset registry (so re-tagging an asset cannot widen a live loan)
-    // and timelocks on the three admin actions that increase risk.
+    // Full-stack redeploy putting two-step transfer on every admin role, plus
+    // addAssetWithTier on the registry.
+    //
+    // The role change is why this is a redeploy rather than a config edit: the
+    // previous VaultFactory had no ownership transfer at all, so it could only
+    // ever belong to its deployer. Handing control to a multisig was not a
+    // permissions question, it was impossible. Operator roles transferred in
+    // one step, where a mistyped address was equally final.
     //
     // Nothing carried over. Verified status, the insurance reserve and vault
-    // history all restart — every contract changed constructor arity, so this
-    // could not be a partial upgrade.
-    kycRegistry:   "0x78628208bA989D9d294B1457Fc51706A80274E90",
-    assetRegistry: "0xC493034B826F92414E2FB44b4ad8874751040160",
-    insurancePool: "0xf61aCE1EE920Bf0d0d0B9825712482CbF5132c25",
-    vaultFactory:  "0x58022875D7F215307455aCda04b721c82D8727Ad",
+    // history all restart.
+    kycRegistry:   "0xd9A6Bf24136f074d85436BF66c2E0f37Be0Ca85f",
+    assetRegistry: "0x744b4f7B80f33Ca4E9F6FF7849782df55d1B7384",
+    insurancePool: "0x867880ADD8C017fF5f4Dc53Eb52C367Ea7DF5607",
+    vaultFactory:  "0xfAF75576D088dEF7318bea8CdE9F45247b71e03a",
     treasury:      "0x2e6075b0B10c747357C2Bd58075af5e471f1f5F3",
     tokens: {
       tUSDG: "0xF727a9E9813d884bfFf2Be906633f4C5C963DC99",
