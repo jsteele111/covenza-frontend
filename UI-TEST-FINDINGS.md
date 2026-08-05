@@ -14,6 +14,108 @@ pre-empt a redesign the later routes might argue for.
 
 ---
 
+# RESOLUTION — 5 August 2026
+
+All 23 items actioned. Twenty fixed, two closed by decision, one deferred with
+reasons. Deployed to covenza.xyz against a fresh stack; 236 tests passing.
+
+## Verified live after the fix
+
+| # | Evidence |
+|---|---|
+| 13A / 13A(ii) | Preview now reads "30d at 31.0% deposit — 9.60% APR". Was "30d at 15%", a loan the protocol refuses, quoting a rate the lender could never receive |
+| 17A | Button reads "Approve 100 tUSDG" — the mandate maximum, not the balance |
+| 27A | `/operator` renders for a non-operator wallet; all 28 buttons and 14 inputs confirmed disabled via `:disabled`, banner names the governing Safe |
+| 5A / 6A / 7B / 8B | Landing page: both cards are real links, product explained, testnet notice, risk disclosure for both sides |
+| 1A / 2A / 3B | Dashboard shows enforced floors — 31.0% Blue chip, 51.6% Standard at 30d, matching the registry — with a testnet-values banner and the stale model footnote gone |
+| 11B | "Verified — you can borrow", correctly omitting an attester for a wallet verified by operator override |
+
+## Verified live by a full loan cycle
+
+Mandate published, filled at 50 tUSDG over 1 day, and a 1 tUSDG swap into tWETH
+executed. All six confirmed on chain:
+
+- **20B** card is a real `<button>`, focusable, with `aria-expanded`
+- **18C** "Published — it is live below" appears at the point of action
+- **26B** both rows present: "if settled now" and "if held to deadline"
+- **25B** "test venue, not a real yield source" beside the ERC-4626 panel
+- **23B** tAAPL struck through and unclickable, with the ceiling explained
+- **24B** "TWAP 0.9918 · use 0.9819" — 0.9918 × 0.99 exactly, the entry-impact
+  allowance. A swap at that figure was accepted and executed.
+
+## Found by running it — three new defects
+
+### 29A — "Published" was announced after an approval
+
+The success flag was set on `isSuccess` alone, and approving and publishing
+share one `useWriteContract`. Approving 100 tUSDG produced "Published — it is
+live below and borrowers can fill it now" with no mandate in existence.
+
+Confirming something that did not happen is worse than the silence it replaced:
+the lender goes looking for a mandate that was never written. Now keyed on which
+action was in flight. **Fixed and verified.**
+
+### 30B — Pool-depth refusals surface Uniswap's wording, not ours
+
+A 10 tUSDG swap at the quoted floor is refused with "Too little received" —
+Uniswap's router error. The real cause is that a trade that size cannot achieve
+the vault's entry-impact threshold in this pool, which Covenza has its own
+sentence for: "Position too large for this pool's depth".
+
+The borrower is told the trade failed, not that it was too big, and nothing
+suggests the two remedies: a smaller amount, or a different fee tier. A 1 tUSDG
+swap at the same tier succeeded.
+
+**Not fixed.** The preflight would need to distinguish "minimum output not met"
+from "cannot reach the impact floor at any minimum".
+
+### 31C — Minimum output goes stale when the amount changes
+
+Changing the swap amount leaves the previously-inserted minimum output in place,
+so a figure quoted for 10 tUSDG persists against a 1 tUSDG trade and the form
+reports a refusal that is an artefact of the stale value. Either clear it or
+re-derive it when the amount changes.
+
+**Not fixed.**
+
+## Closed by decision, not fixed
+
+- **4B** the "Wrong network" badge is RainbowKit's and is telling the truth.
+  Both public pages now state the network expectation, which was the underlying
+  confusion.
+
+## Found while fixing
+
+Three defects that the review itself did not catch:
+
+1. **The KYC gate was unreachable by anyone who needed it.** `/borrower`
+   required the borrower role, which required being verified — so the screen
+   that exists to help an unverified wallet get verified could only be seen by
+   wallets that already were. The landing card said "Get verified to borrow",
+   the one thing that could not be done. Same bootstrap trap fixed for lenders
+   weeks earlier and left open here; invisible during the walkthrough because
+   our test borrower was already verified.
+
+2. **The deploy script destroyed the Safe addresses.** It rewrote its network's
+   whole object in `deployed-addresses.json`, discarding `operatorSafe` and
+   `ownerSafe`. The Safes existed on chain; the record did not, so the handover
+   script reported them missing and would have had someone create a second
+   pair. Now merges.
+
+3. **The operator tab returned early for non-operators**, beneath the route
+   guard — so opening the route was necessary but not sufficient. Refusing to
+   show public information to everyone is not a security property.
+
+## Still open, carried forward
+
+- Add real co-signers to both Safes and raise the threshold above 1.
+- Decide whether the insurance draw cap should be two numbers.
+- Replace placeholder tier volatilities with measured values.
+- Make the KYC badge genuinely non-transferable, or stop calling it soulbound.
+- Independent audit.
+
+---
+
 # ACTION LIST
 
 Every item needing work, in the order I would do it. Detail for each is in the

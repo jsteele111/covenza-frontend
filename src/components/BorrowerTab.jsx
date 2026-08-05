@@ -243,6 +243,16 @@ export function BorrowerTab() {
   const quoteOk = swapQuote?.[0] === true;
   const twapOut = swapQuote?.[1];
   const floorOut = swapQuote?.[2];
+
+  // Clear the minimum when the trade it was quoted for changes.
+  //
+  // A figure taken for a 10 tUSDG swap stayed in the field when the amount
+  // dropped to 1, so the form reported a refusal that was an artefact of the
+  // stale number rather than anything about the trade. A minimum output is only
+  // meaningful against the amount, asset and fee tier it was derived from.
+  useEffect(() => {
+    setSwapMinOut("");
+  }, [swapAmountIn, swapAsset, swapFeeTier]);
   const parsedSwapMinOut = tryParseUnits(swapMinOut, swapAssetDecimals);
 
   const swapInputsValid = Boolean(
@@ -390,7 +400,7 @@ export function BorrowerTab() {
     : parsedSwapIn > vault.investableRemaining
     ? `Exceeds investable balance (${formatTokenAmount(vault.investableRemaining, vault.decimals)} ${vault.symbol}).`
     : swapPreflight.status === "would-revert"
-    ? swapPreflight.reason
+    ? explainSwapRefusal(swapPreflight.reason, parsedSwapMinOut, floorOut, vault, swapAssetDecimals)
     : null;
 
   // --- Settle ---
@@ -949,4 +959,42 @@ function VerifiedBadge({ address }) {
       </div>
     </div>
   );
+}
+
+/**
+ * Turns the router's refusal into the protocol's own explanation, where the two
+ * describe the same thing from different sides.
+ *
+ * Observed live: a 10 tUSDG swap quoted at the vault's own entry-impact floor
+ * was refused with Uniswap's "Too little received". Accurate, and useless — the
+ * borrower is told the trade failed, not that it was too large for the pool,
+ * and nothing points at either remedy. A 1 tUSDG swap through the same tier
+ * succeeded.
+ *
+ * The distinction that matters: if the borrower's minimum is at or below what
+ * the vault itself would accept, then no minimum they could set would help.
+ * The pool cannot deliver the impact floor at this size, so the vault would
+ * refuse on entry impact even if the router did not. That is a different
+ * problem from asking for too much, and it has different answers.
+ */
+function explainSwapRefusal(reason, minOut, floorOut, vault, outDecimals) {
+  const tooLittle = /too little received|insufficient output/i.test(reason || "");
+  const askingNoMoreThanTheVaultWould =
+    minOut !== undefined && floorOut !== undefined && minOut <= floorOut;
+
+  if (tooLittle && askingNoMoreThanTheVaultWould) {
+    return (
+      "Position too large for this pool's depth at this fee tier — the price moves " +
+      "further than the vault permits on entry. Try a smaller amount, or a different fee tier."
+    );
+  }
+
+  if (tooLittle && floorOut !== undefined && outDecimals !== undefined) {
+    return (
+      `Your minimum output is above what this trade returns. The vault accepts down to ` +
+      `${formatTokenAmount(floorOut, outDecimals)} — use that figure or lower.`
+    );
+  }
+
+  return reason;
 }

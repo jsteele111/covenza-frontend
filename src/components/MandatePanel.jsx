@@ -63,23 +63,34 @@ export function MandatePanel({ selectedAsset, selectedSymbol, decimals }) {
     query: { enabled: Boolean(selectedAsset && address), refetchInterval: 15000 },
   });
 
-  // Confirm at the point of action, not only in the list below the fold.
+  // Confirm at the point of action — and confirm the RIGHT action.
   //
   // Publishing used to succeed silently: the button returned from "Confirming…"
   // to "Publish mandate" and nothing else visible changed. The mandate did
   // appear under "Your mandates" — off screen, requiring a scroll. A lender who
   // did not scroll had the same evidence of success as of failure.
+  //
+  // Approving and publishing share a single useWriteContract, so a flag set on
+  // isSuccess alone reported "Published — it is live below and borrowers can
+  // fill it now" after an approval, when no mandate existed. Confirming
+  // something that did not happen is worse than the silence this replaced: the
+  // lender would have gone looking for a mandate that was never written.
+  const [pendingAction, setPendingAction] = useState(null); // "approve" | "publish"
   const [justPublished, setJustPublished] = useState(false);
 
   useEffect(() => {
-    if (isSuccess) {
-      refetch();
-      refetchAllowance();
-      reset();
+    if (!isSuccess) return;
+    refetch();
+    refetchAllowance();
+    reset();
+
+    if (pendingAction === "publish") {
       setJustPublished(true);
       const t = setTimeout(() => setJustPublished(false), 8000);
+      setPendingAction(null);
       return () => clearTimeout(t);
     }
+    setPendingAction(null);
   }, [isSuccess]);
 
   const busy = isPending || isConfirming;
@@ -128,6 +139,7 @@ export function MandatePanel({ selectedAsset, selectedSymbol, decimals }) {
   async function approveForMandate() {
     const wanted = tryParse(maxPrincipal, decimals);
     if (wanted === undefined) return;
+    setPendingAction("approve");
     const fees = await publicClient.estimateFeesPerGas();
     writeContract({
       address: selectedAsset, abi: erc20Abi, functionName: "approve",
@@ -173,6 +185,7 @@ export function MandatePanel({ selectedAsset, selectedSymbol, decimals }) {
     const min = tryParse(minPrincipal, decimals);
     const max = tryParse(maxPrincipal, decimals);
     if (min === undefined || max === undefined) return;
+    setPendingAction("publish");
     try {
       const fees = await publicClient.estimateFeesPerGas();
       writeContract({
