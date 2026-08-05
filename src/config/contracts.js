@@ -60,10 +60,10 @@ const CONTRACTS_BY_CHAIN = {
     //
     // Nothing carried over. Verified status, the insurance reserve and vault
     // history all restart.
-    kycRegistry:   "0xd9A6Bf24136f074d85436BF66c2E0f37Be0Ca85f",
-    assetRegistry: "0x744b4f7B80f33Ca4E9F6FF7849782df55d1B7384",
-    insurancePool: "0x867880ADD8C017fF5f4Dc53Eb52C367Ea7DF5607",
-    vaultFactory:  "0xfAF75576D088dEF7318bea8CdE9F45247b71e03a",
+    kycRegistry:   "0x11F55ff9122E0d4E1De976Ce73a917e64Ed22DD3",
+    assetRegistry: "0xA6588030E822bEc3c7551ef67A63D21D6c2B516D",
+    insurancePool: "0x3368Ee8aa5b32061c32B938add1F4005D2Cb7007",
+    vaultFactory:  "0xdF2c29a630176d6Cb431592cC87EE1931d8c08e2",
     treasury:      "0x2e6075b0B10c747357C2Bd58075af5e471f1f5F3",
     tokens: {
       tUSDG: "0xF727a9E9813d884bfFf2Be906633f4C5C963DC99",
@@ -87,7 +87,7 @@ const CONTRACTS_BY_CHAIN = {
       router:  "0x70Ce56aFf68cD3C5352c66C665B37258915b3F14",
       pool:    "0x44A3024740aCDFe744500A606a8B3552717B5B76", // tUSDG/tWETH 0.3%
     },
-    yieldVenue4626: "0xB37AEf9CaE1d6127462DAe00CA80bA567d6abbeE", // over tUSDG — a MOCK
+    yieldVenue4626: "0x3731ff6A8C64767aE24967f96B1A59cFb803dA98", // over tUSDG — a MOCK
   },
 
   // Arbitrum Sepolia (421614) was removed on 4 August 2026.

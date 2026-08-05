@@ -116,6 +116,11 @@ export const VAULT_FACTORY_ABI = parseAbi([
 ]);
 
 export const VAULT_ABI = parseAbi([
+  // Prices a prospective swap at the TWAP so the borrower can set a minimum
+  // output that means something. Returns quotable=false rather than reverting
+  // when the pair has no usable history.
+  "function quoteSwapOut(address tokenOut, uint256 amountIn, uint24 poolFee) view returns (bool quotable, uint256 twapOut, uint256 minimumOut)",
+
   // --- Loan terms & state ---
   "function asset() view returns (address)",
   "function lender() view returns (address)",

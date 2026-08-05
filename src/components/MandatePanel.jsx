@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { useAccount, useChainId, useReadContract, useWriteContract, useWaitForTransactionReceipt, usePublicClient } from "wagmi";
-import { parseUnits, maxUint256 } from "viem";
+import { parseUnits } from "viem";
 import { VAULT_FACTORY_ABI, ERC20_ABI, ASSET_REGISTRY_ABI } from "../config/abis.js";
 import { getContractsForChain } from "../config/contracts.js";
 import { formatTokenAmount } from "../utils/format.js";
@@ -63,8 +63,23 @@ export function MandatePanel({ selectedAsset, selectedSymbol, decimals }) {
     query: { enabled: Boolean(selectedAsset && address), refetchInterval: 15000 },
   });
 
+  // Confirm at the point of action, not only in the list below the fold.
+  //
+  // Publishing used to succeed silently: the button returned from "Confirming…"
+  // to "Publish mandate" and nothing else visible changed. The mandate did
+  // appear under "Your mandates" — off screen, requiring a scroll. A lender who
+  // did not scroll had the same evidence of success as of failure.
+  const [justPublished, setJustPublished] = useState(false);
+
   useEffect(() => {
-    if (isSuccess) { refetch(); refetchAllowance(); reset(); }
+    if (isSuccess) {
+      refetch();
+      refetchAllowance();
+      reset();
+      setJustPublished(true);
+      const t = setTimeout(() => setJustPublished(false), 8000);
+      return () => clearTimeout(t);
+    }
   }, [isSuccess]);
 
   const busy = isPending || isConfirming;
@@ -95,11 +110,28 @@ export function MandatePanel({ selectedAsset, selectedSymbol, decimals }) {
     query: { enabled: Number(maxTermDays) > 0 },
   });
 
-  async function approveAll() {
+  /**
+   * Approves exactly what this mandate can draw — not an unlimited allowance.
+   *
+   * This used to call approve(factory, maxUint256) behind a button labelled
+   * "Raise allowance", with copy reading "only an allowance is granted".
+   * Publishing a 100 tUSDG mandate approved the lender's entire balance,
+   * without limit or expiry, and nothing on screen said so.
+   *
+   * A lender lending 100 has not accepted 100 of counterparty risk under that
+   * arrangement; they have accepted their balance — against a factory whose
+   * owner can repoint its registries, and whose governance multisig is
+   * currently single-signer. The convenience of one approval covering every
+   * future mandate is real, but it is the lender's convenience to trade, not
+   * ours to assume on their behalf.
+   */
+  async function approveForMandate() {
+    const wanted = tryParse(maxPrincipal, decimals);
+    if (wanted === undefined) return;
     const fees = await publicClient.estimateFeesPerGas();
     writeContract({
       address: selectedAsset, abi: erc20Abi, functionName: "approve",
-      args: [contracts.vaultFactory, maxUint256],
+      args: [contracts.vaultFactory, wanted],
       maxFeePerGas: fees.maxFeePerGas * 2n, maxPriorityFeePerGas: fees.maxPriorityFeePerGas,
     });
   }
@@ -118,9 +150,24 @@ export function MandatePanel({ selectedAsset, selectedSymbol, decimals }) {
   const belowFloor =
     floorLongBps !== undefined && preview.minDepositBps < Number(floorLongBps);
 
-  const cheapest = previewMandateApr(preview, Number(minTermDays) * DAY, preview.minDepositBps);
-  const dearest  = previewMandateApr(preview, Number(maxTermDays) * DAY, preview.minDepositBps);
-  const generous = previewMandateApr(preview, Number(maxTermDays) * DAY, preview.minDepositBps + 2000);
+  // Quote at the deposit a borrower would ACTUALLY have to post, not at the
+  // mandate's advertised minimum.
+  //
+  // The old preview quoted "30d at 15%" while the notice directly above it
+  // explained that 31% was the floor at 30 days. Both panels were individually
+  // correct and neither consulted the other, so the screen contradicted itself
+  // at the moment the lender was setting their terms — and the headline row
+  // was the impossible one.
+  //
+  // It was also not merely cosmetic: because the credit was measured from the
+  // advertised minimum, the quoted 9.60% could never be received. The lowest
+  // legal deposit at that term already carried a 160bp discount.
+  const bindShort = Math.max(preview.minDepositBps, Number(floorShortBps ?? 0));
+  const bindLong  = Math.max(preview.minDepositBps, Number(floorLongBps ?? 0));
+
+  const cheapest = previewMandateApr(preview, Number(minTermDays) * DAY, bindShort, bindShort);
+  const dearest  = previewMandateApr(preview, Number(maxTermDays) * DAY, bindLong, bindLong);
+  const generous = previewMandateApr(preview, Number(maxTermDays) * DAY, bindLong + 2000, bindLong);
 
   async function publish() {
     const min = tryParse(minPrincipal, decimals);
@@ -184,8 +231,9 @@ export function MandatePanel({ selectedAsset, selectedSymbol, decimals }) {
     <div>
       <p style={sectionLabelStyle}>Publish a mandate</p>
       <p style={{ fontSize: 11, color: "var(--parch-dim)", margin: "0 0 12px", lineHeight: 1.5 }}>
-        Terms a borrower can take without asking you first. Your capital stays in your
-        wallet — only an allowance is granted, and a fill draws on it.
+        Terms a borrower can take without asking you first. Your capital stays in your wallet —
+        you approve the factory for this mandate's maximum, and a fill draws on it. The approval
+        is bounded to that amount, not to your balance.
       </p>
 
       {/* Shown above the form rather than after publishing, because the fix is
@@ -214,8 +262,12 @@ export function MandatePanel({ selectedAsset, selectedSymbol, decimals }) {
           </p>
         </div>
         {capacityShort && (
-          <button onClick={approveAll} disabled={busy} style={{ ...smallDangerButtonStyle, color: "var(--brass)", borderColor: "var(--brass)", whiteSpace: "nowrap" }}>
-            Raise allowance
+          <button
+            onClick={approveForMandate}
+            disabled={busy}
+            style={{ ...smallDangerButtonStyle, color: "var(--brass)", borderColor: "var(--brass)", whiteSpace: "nowrap" }}
+          >
+            {busy ? "Approving…" : `Approve ${maxPrincipal} ${selectedSymbol}`}
           </button>
         )}
       </div>
@@ -311,9 +363,17 @@ export function MandatePanel({ selectedAsset, selectedSymbol, decimals }) {
 
         <div style={{ background: "var(--ink)", border: "1px solid var(--hairline)", borderRadius: 8, padding: "12px 14px", margin: "0 0 12px" }}>
           <p style={{ fontSize: 11, color: "var(--parch-dim)", margin: "0 0 8px" }}>What a borrower would pay</p>
-          <Line label={`${minTermDays}d at ${minDeposit}% deposit`} value={fmtApr(cheapest)} />
-          <Line label={`${maxTermDays}d at ${minDeposit}% deposit`} value={fmtApr(dearest)} emphasis />
-          <Line label={`${maxTermDays}d at ${Number(minDeposit) + 20}% deposit`} value={fmtApr(generous)} />
+          <Line label={`${minTermDays}d at ${(bindShort / 100).toFixed(1)}% deposit`} value={fmtApr(cheapest)} />
+          <Line label={`${maxTermDays}d at ${(bindLong / 100).toFixed(1)}% deposit`} value={fmtApr(dearest)} emphasis />
+          <Line label={`${maxTermDays}d at ${((bindLong + 2000) / 100).toFixed(1)}% deposit`} value={fmtApr(generous)} />
+          {bindLong > preview.minDepositBps && (
+            <p style={{ fontSize: 10.5, color: "var(--slate)", margin: "8px 0 0", lineHeight: 1.5 }}>
+              Quoted at the deposit a borrower must actually post. At the long end the protocol's
+              floor exceeds your {minDeposit}% minimum, so that is the figure that applies — and
+              the rate you receive is the undiscounted one, because a borrower earns no credit for
+              deposit they had no choice about.
+            </p>
+          )}
         </div>
 
         <ActionButton
@@ -322,6 +382,11 @@ export function MandatePanel({ selectedAsset, selectedSymbol, decimals }) {
           loading={busy}
           onClick={publish}
         />
+        {justPublished && (
+          <p style={{ fontSize: 12, color: "var(--brass)", marginTop: 10 }}>
+            Published — it is live below and borrowers can fill it now.
+          </p>
+        )}
         {error && <p style={{ fontSize: 12, color: "var(--brick)", marginTop: 10 }}>{error.shortMessage || error.message}</p>}
       </div>
 

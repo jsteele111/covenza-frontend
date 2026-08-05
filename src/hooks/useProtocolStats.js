@@ -45,11 +45,17 @@ export function useProtocolStats() {
 
   const assets = whitelistedAssets || [];
 
-  // --- Per-asset reads: insurance reserve + on-chain decimals ---
+  // --- Per-asset reads: insurance reserve, decimals, risk tier ---
+  //
+  // The tier is what determines the deposit floor, so it has to travel with
+  // the asset. The dashboard previously looked its deposit figures up in a
+  // bundled JSON keyed by symbol, which listed ETH, WBTC, USDC and USDT — none
+  // of them deployed — so every card read "no deposit-sizing data published".
   const { data: perAssetResults, isLoading: perAssetLoading } = useReadContracts({
     contracts: assets.flatMap((asset) => [
       { address: insurancePool, abi: INSURANCE_POOL_ABI, functionName: "reserveOf", args: [asset] },
       { address: asset, abi: ERC20_ABI, functionName: "decimals" },
+      { address: assetRegistry, abi: ASSET_REGISTRY_ABI, functionName: "tierOf", args: [asset] },
     ]),
     query: { enabled: isConfigured && assets.length > 0, refetchInterval: 30000 },
   });
@@ -95,8 +101,9 @@ export function useProtocolStats() {
 
   // --- Assemble per-asset stats ---
   const assetStats = assets.map((asset, i) => {
-    const reserve = perAssetResults?.[i * 2]?.result;
-    const decimals = perAssetResults?.[i * 2 + 1]?.result;
+    const reserve = perAssetResults?.[i * 3]?.result;
+    const decimals = perAssetResults?.[i * 3 + 1]?.result;
+    const tier = perAssetResults?.[i * 3 + 2]?.result;
 
     let totalVaultsForAsset = 0;
     let activeVaultsForAsset = 0;
@@ -127,6 +134,7 @@ export function useProtocolStats() {
       symbol: symbolForToken(chainId, asset),
       decimals,
       reserve,
+      tier: tier === undefined || tier === null ? undefined : Number(tier),
       totalVaults: totalVaultsForAsset,
       activeVaults: activeVaultsForAsset,
       totalPrincipal,

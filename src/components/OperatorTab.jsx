@@ -128,14 +128,20 @@ export function OperatorTab() {
   }, [isSuccess]);
 
   if (!isConnected) {
-    return <EmptyState message="Connect the operator wallet to manage verified addresses." />;
+    return <EmptyState message="Connect a wallet to view protocol configuration. Changing it requires the operator role." />;
   }
 
-  const isOperator = operatorAddress && address && operatorAddress.toLowerCase() === address.toLowerCase();
-
-  if (!isOperator) {
-    return <EmptyState message="This wallet is not the KYC registry operator. Connect the operator wallet to manage verified addresses." />;
-  }
+  // Everything this view READS is public on chain. Only the writes need the
+  // role, so only the writes are gated.
+  //
+  // This used to return an EmptyState here and render nothing else. Combined
+  // with the route guard, it meant that once the operator role moved to a Safe
+  // the page became unreachable by anyone: the Safe holds the role and cannot
+  // browse, the deploying key can browse and no longer holds it. Refusing to
+  // display public information to everyone is not a security property.
+  const isOperator =
+    operatorAddress && address &&
+    operatorAddress.toLowerCase() === address.toLowerCase();
 
   async function revoke(addr) {
     setRevokeError(null);
@@ -163,6 +169,23 @@ export function OperatorTab() {
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 24 }}>
+
+      {!isOperator && <NotTheOperatorNotice operatorAddress={operatorAddress} connected={address} />}
+
+      {/* A disabled fieldset disables every control inside it, which is what we
+          want: sixteen write actions, one guard, and no chance of missing one
+          as the panel grows. Reads render normally. */}
+      <fieldset
+        disabled={!isOperator}
+        style={{
+          border: "none", padding: 0, margin: 0, minWidth: 0,
+          display: "flex", flexDirection: "column", gap: 24,
+          // Verified disabled in the DOM, but they did not LOOK it — a red
+          // "Revoke" rendered at full strength is exactly what someone clicks.
+          // A control that silently ignores you is worse than one that says no.
+          opacity: isOperator ? 1 : 0.45,
+        }}
+      >
 
       {/* --- Loss history: visibility layer for manual revocation review --- */}
       <div>
@@ -311,6 +334,49 @@ export function OperatorTab() {
           <EmptyState message="The asset registry and insurance pool haven't been deployed on this network yet — whitelist, insurance, and settlement-config controls will appear here once Group F's deployment fills in real addresses." />
         </div>
       )}
+      </fieldset>
+    </div>
+  );
+}
+
+/**
+ * Says who governs, and that this wallet does not.
+ *
+ * Written after the 5 August review found the operator route unreachable by
+ * anyone: the role had moved to a Safe, which holds it but cannot browse, while
+ * the deploying key can browse but no longer holds it. Reads are open now, so
+ * this explains why the controls are inert rather than leaving them looking
+ * broken.
+ */
+function NotTheOperatorNotice({ operatorAddress, connected }) {
+  return (
+    <div
+      style={{
+        border: "1px solid var(--hairline)",
+        borderLeft: "3px solid var(--brass)",
+        borderRadius: 8,
+        padding: "14px 16px",
+        background: "var(--panel)",
+      }}
+    >
+      <p style={{ fontSize: 13, fontWeight: 600, color: "var(--parch)", margin: "0 0 6px" }}>
+        Viewing only — this wallet does not govern the protocol
+      </p>
+      <p style={{ fontSize: 12, color: "var(--parch-dim)", margin: "0 0 8px", lineHeight: 1.6 }}>
+        Everything here is public on chain and readable by anyone. The controls are disabled
+        because changing any of it requires the operator role.
+      </p>
+      <p className="mono" style={{ fontSize: 11, color: "var(--parch-dim)", margin: "0 0 2px" }}>
+        operator&nbsp;&nbsp;{operatorAddress || "—"}
+      </p>
+      <p className="mono" style={{ fontSize: 11, color: "var(--parch-dim)", margin: 0 }}>
+        you&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;{connected || "not connected"}
+      </p>
+      <p style={{ fontSize: 11.5, color: "var(--slate)", margin: "10px 0 0", lineHeight: 1.6 }}>
+        If the operator is a multisig it cannot browse this page directly. Connect it as a wallet
+        through WalletConnect, or make the change from a script — either way the transaction goes
+        to the multisig for signing.
+      </p>
     </div>
   );
 }

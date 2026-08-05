@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
-import { useAccount, useChainId, useReadContract, useWriteContract, useWaitForTransactionReceipt, usePublicClient } from "wagmi";
+import { useAccount, useChainId, useReadContract, useReadContracts, useWriteContract, useWaitForTransactionReceipt, usePublicClient } from "wagmi";
 import { parseUnits, formatUnits } from "viem";
-import { KYC_REGISTRY_ABI, ERC20_ABI, ASSET_REGISTRY_ABI } from "../config/abis.js";
+import { KYC_REGISTRY_ABI, ERC20_ABI, ASSET_REGISTRY_ABI, VAULT_ABI } from "../config/abis.js";
 import { getContractsForChain, isPlaceholder, symbolForToken } from "../config/contracts.js";
 import { useLatestVault } from "../hooks/useLatestVault.js";
 import { useVaultSelection } from "../hooks/useVaultSelection.js";
@@ -19,6 +19,7 @@ import { formatTokenAmount } from "../utils/format.js";
 const kycAbi = KYC_REGISTRY_ABI;
 const erc20Abi = ERC20_ABI;
 const assetRegistryAbi = ASSET_REGISTRY_ABI;
+const vaultAbi = VAULT_ABI;
 
 const FEE_TIERS = [
   { label: "0.05%", value: 500 },
@@ -55,9 +56,11 @@ function tryParseUnits(value, decimals) {
  *     to any other whitelisted asset, and unwind it manually before
  *     maturity (unwinding also happens automatically at settlement if
  *     they don't). minAmountOut is borrower-supplied slippage protection,
- *     enforced on-chain — there's no on-chain quote function to prefill it
- *     from, so this UI asks for it directly rather than pretending to
- *     estimate a number it can't actually source safely.
+ *     enforced on-chain. Vault.quoteSwapOut() now provides the TWAP-implied
+ *     output and the vault's own acceptance floor, so the form offers a real
+ *     reference instead of asking for a number with nothing to set it against
+ *     — which in practice meant guessing, or entering a value low enough to be
+ *     no protection at all.
  */
 export function BorrowerTab() {
   const { address, isConnected } = useAccount();
@@ -152,6 +155,43 @@ export function BorrowerTab() {
     (a) => vault && a.toLowerCase() !== vault.asset.toLowerCase()
   );
 
+  // Which of those the vault's risk ceiling forbids. Known from the asset and
+  // the vault alone, so it can be shown the moment the selector renders rather
+  // than after the borrower has filled in an amount and a minimum output.
+  const { data: targetTierResults } = useReadContracts({
+    contracts: swapTargets.map((a) => ({
+      address: contracts.assetRegistry,
+      abi: assetRegistryAbi,
+      functionName: "tierOf",
+      args: [a],
+    })),
+    query: { enabled: swapTargets.length > 0 && !isPlaceholder(contracts.assetRegistry) },
+  });
+
+  const unavailableTargets = new Set(
+    swapTargets
+      .filter((_, i) => {
+        const tier = targetTierResults?.[i]?.result;
+        return tier !== undefined && vault?.maxTier !== undefined && Number(tier) > Number(vault.maxTier);
+      })
+      .map((a) => a.toLowerCase())
+  );
+
+  // Never leave a forbidden asset selected — it would be the one destination
+  // the borrower cannot use, sitting there as the default.
+  useEffect(() => {
+    if (swapAsset && unavailableTargets.has(swapAsset.toLowerCase())) {
+      const firstAllowed = swapTargets.find((a) => !unavailableTargets.has(a.toLowerCase()));
+      setSwapAsset(firstAllowed || "");
+    }
+  }, [swapAsset, targetTierResults]);
+
+  // A price to set the minimum output against.
+  //
+  // The form has always asked for one and enforced it on chain, while telling
+  // the borrower plainly that no quote was wired in. Candid, but it left them
+  // guessing — and the safe-looking guess is a number low enough to provide no
+  // protection, which defeats the control entirely.
   useEffect(() => {
     if (!swapAsset && swapTargets.length > 0) setSwapAsset(swapTargets[0]);
   }, [swapTargets, swapAsset]);
@@ -191,6 +231,18 @@ export function BorrowerTab() {
   // Everything it needs is read defensively for the same reason; the hook
   // itself no-ops unless `enabled`.
   const parsedSwapIn = tryParseUnits(swapAmountIn, vault?.decimals);
+
+  const { data: swapQuote } = useReadContract({
+    address: latestVaultAddress,
+    abi: vaultAbi,
+    functionName: "quoteSwapOut",
+    args: [swapAsset, parsedSwapIn ?? 0n, swapFeeTier],
+    query: { enabled: Boolean(latestVaultAddress && swapAsset && parsedSwapIn) },
+  });
+
+  const quoteOk = swapQuote?.[0] === true;
+  const twapOut = swapQuote?.[1];
+  const floorOut = swapQuote?.[2];
   const parsedSwapMinOut = tryParseUnits(swapMinOut, swapAssetDecimals);
 
   const swapInputsValid = Boolean(
@@ -232,6 +284,7 @@ export function BorrowerTab() {
   if (!vault) {
     return (
       <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+        <VerifiedBadge address={address} />
         <div>
           <p style={{ fontSize: 13, fontWeight: 600, color: "var(--parch)", margin: "0 0 4px" }}>
             Available mandates
@@ -444,7 +497,15 @@ export function BorrowerTab() {
       {/* --- Yield venue --- */}
       {vault.yieldSupported && (
         <div style={cardStyle}>
-          <p style={{ fontSize: 11, color: "var(--parch-dim)", margin: "0 0 4px" }}>Yield — {vault.venueLabel}</p>
+          <p style={{ fontSize: 11, color: "var(--parch-dim)", margin: "0 0 4px" }}>
+            Yield — {vault.venueLabel}
+            {/* No real ERC-4626 venue exists on this chain: Aave and Morpho are
+                both absent, so the registered venue is a mock. The production
+                deploy guard refuses to ship with any venue configured, which
+                is the measure of how much this matters — worth saying on the
+                panel rather than only in the deploy script. */}
+            <span style={{ color: "var(--brick)" }}> · test venue, not a real yield source</span>
+          </p>
           <p style={{ fontSize: 11, color: "var(--parch-dim)", margin: "0 0 12px" }}>
             Investable now: {formatTokenAmount(vault.investableRemaining, vault.decimals)} {vault.symbol}
             {yieldPosition > 0n && (
@@ -505,7 +566,19 @@ export function BorrowerTab() {
           </p>
 
           <Field label="Destination asset">
-            <AssetSwitcher assets={swapTargets} chainId={chainId} value={swapAsset} onChange={setSwapAsset} />
+            <AssetSwitcher
+              assets={swapTargets}
+              chainId={chainId}
+              value={swapAsset}
+              onChange={setSwapAsset}
+              unavailable={unavailableTargets}
+            />
+            {unavailableTargets.size > 0 && (
+              <p style={{ fontSize: 10.5, color: "var(--slate)", margin: "6px 0 0", lineHeight: 1.5 }}>
+                Struck-through assets sit above this vault's {vault.maxTierLabel} ceiling, which
+                the lender set at origination. No amount or price makes them available.
+              </p>
+            )}
           </Field>
 
           <Row2>
@@ -514,6 +587,32 @@ export function BorrowerTab() {
             </Field>
             <Field label={`Min. output (${symbolForToken(chainId, swapAsset) || "—"})`}>
               <input value={swapMinOut} onChange={(e) => setSwapMinOut(e.target.value)} style={inputStyle} placeholder="0.0" />
+              {quoteOk && swapAssetDecimals !== undefined && (
+                <div style={{ display: "flex", alignItems: "baseline", gap: 8, marginTop: 5 }}>
+                  <span style={{ fontSize: 10.5, color: "var(--parch-dim)" }}>
+                    TWAP {formatTokenAmount(twapOut, swapAssetDecimals)}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => setSwapMinOut(formatUnits(floorOut, swapAssetDecimals))}
+                    style={{
+                      background: "transparent", border: "none", padding: 0,
+                      fontSize: 10.5, color: "var(--brass)", cursor: "pointer", textDecoration: "underline",
+                    }}
+                  >
+                    use {formatTokenAmount(floorOut, swapAssetDecimals)}
+                  </button>
+                  <span style={{ fontSize: 10.5, color: "var(--slate)" }}>
+                    — the least this vault accepts
+                  </span>
+                </div>
+              )}
+              {parsedSwapIn && swapQuote && !quoteOk && (
+                <p style={{ fontSize: 10.5, color: "var(--brick)", margin: "5px 0 0" }}>
+                  No usable price history for this pair at this fee tier — the swap would be
+                  refused. Try another fee tier.
+                </p>
+              )}
             </Field>
           </Row2>
 
@@ -541,8 +640,9 @@ export function BorrowerTab() {
           </Field>
 
           <p style={{ fontSize: 11, color: "var(--parch-dim)", margin: "-4px 0 12px" }}>
-            Minimum output is your own slippage protection, enforced on-chain — there's no live price
-            quote wired into this form, so set it deliberately.
+            Minimum output is your own slippage protection, enforced on-chain. The TWAP above is
+            the reference price; the vault refuses anything more than a short distance below it,
+            so setting your minimum under that figure does not buy you a looser trade.
           </p>
 
           <ActionButton
@@ -692,21 +792,37 @@ function SwapBackRow({ vaultAddress, held, loanSymbol, loanDecimals, onDone }) {
   );
 }
 
-function AssetSwitcher({ assets, chainId, value, onChange }) {
+/**
+ * @param unavailable  Set of asset addresses this vault may never hold, with
+ *                     the reason. Rendered struck through and unclickable.
+ *
+ * Marking them here rather than letting them be selected is the point. An
+ * asset above the vault's risk ceiling can never be swapped into, whatever
+ * amount or price is entered — but the form used to accept the selection, ask
+ * for a minimum output, and only then report "Asset exceeds this vault's risk
+ * mandate". The borrower was made to solve a solvable problem before being
+ * told about the unsolvable one.
+ */
+function AssetSwitcher({ assets, chainId, value, onChange, unavailable }) {
   return (
     <div style={{ display: "inline-flex", background: "var(--ink)", border: "1px solid var(--hairline)", borderRadius: 8, padding: 3 }}>
       {assets.map((asset) => {
         const active = asset === value;
+        const blocked = unavailable?.has?.(asset.toLowerCase());
         return (
           <button
             key={asset}
             type="button"
-            onClick={() => onChange(asset)}
+            disabled={blocked}
+            title={blocked ? "Above this vault's risk ceiling — agreed with the lender at origination" : undefined}
+            onClick={() => !blocked && onChange(asset)}
             style={{
-              border: "none", borderRadius: 6, padding: "6px 14px", fontSize: 12, cursor: "pointer",
-              background: active ? "var(--brass)" : "transparent",
-              color: active ? "#1C1C1A" : "var(--parch-dim)",
-              fontWeight: active ? 600 : 400,
+              border: "none", borderRadius: 6, padding: "6px 14px", fontSize: 12,
+              cursor: blocked ? "not-allowed" : "pointer",
+              background: active && !blocked ? "var(--brass)" : "transparent",
+              color: blocked ? "var(--slate)" : (active ? "#1C1C1A" : "var(--parch-dim)"),
+              fontWeight: active && !blocked ? 600 : 400,
+              textDecoration: blocked ? "line-through" : "none",
             }}
           >
             {symbolForToken(chainId, asset)}
@@ -777,3 +893,60 @@ const inputStyle = {
   fontSize: 13,
   fontFamily: "IBM Plex Mono, monospace",
 };
+/**
+ * Confirms the wallet is verified, and by whom.
+ *
+ * A verified borrower previously had no acknowledgement at all: the only
+ * signal was the ABSENCE of the verification gate, which you would have to
+ * know existed to notice. Someone freshly verified got no confirmation it had
+ * worked, and someone unsure of their status had nothing to check.
+ *
+ * Naming the attester matters more here than it looks. Covenza performs no
+ * identity check itself — it records that a recognised third party did — so
+ * "who admitted this wallet" is the entirety of what verification means, and
+ * it is exactly what the attester model makes auditable.
+ */
+function VerifiedBadge({ address }) {
+  const chainId = useChainId();
+  const contracts = getContractsForChain(chainId);
+
+  const { data: attester } = useReadContract({
+    address: contracts.kycRegistry,
+    abi: kycAbi,
+    functionName: "attestedBy",
+    args: [address],
+    query: { enabled: Boolean(address) && !isPlaceholder(contracts.kycRegistry) },
+  });
+
+  const { data: info } = useReadContract({
+    address: contracts.kycRegistry,
+    abi: kycAbi,
+    functionName: "attesters",
+    args: [attester],
+    query: { enabled: Boolean(attester) && attester !== "0x0000000000000000000000000000000000000000" },
+  });
+
+  const providerName = info?.[1];
+
+  return (
+    <div
+      style={{
+        display: "flex",
+        alignItems: "center",
+        gap: 10,
+        border: "1px solid var(--hairline)",
+        borderRadius: 8,
+        padding: "9px 13px",
+        background: "var(--panel)",
+      }}
+    >
+      <span style={{ color: "var(--brass)", fontSize: 13 }}>&#10003;</span>
+      <div>
+        <span style={{ fontSize: 12, color: "var(--parch)" }}>Verified — you can borrow</span>
+        <span style={{ fontSize: 11, color: "var(--parch-dim)" }}>
+          {providerName ? ` · attested by ${providerName}` : ""}
+        </span>
+      </div>
+    </div>
+  );
+}

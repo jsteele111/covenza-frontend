@@ -1,6 +1,9 @@
 import { useState } from "react";
+import { useChainId, useReadContract } from "wagmi";
 import { useProtocolStats } from "../hooks/useProtocolStats.js";
-import { recommendedDeposit, depositModelInfo } from "../utils/deposit.js";
+import { getContractsForChain } from "../config/contracts.js";
+import { ASSET_REGISTRY_ABI } from "../config/abis.js";
+import { TIER_LABELS } from "../hooks/useVaultData.js";
 import { formatTokenAmount, formatPercent, shortAddress } from "../utils/format.js";
 
 const DURATION_OPTIONS = [
@@ -20,7 +23,6 @@ const DURATION_OPTIONS = [
 export function PublicDashboard() {
   const { isConfigured, assets, protocolConfig, isLoading } = useProtocolStats();
   const [durationDays, setDurationDays] = useState(30);
-  const model = depositModelInfo();
 
   if (!isConfigured) {
     return (
@@ -38,8 +40,31 @@ export function PublicDashboard() {
           Protocol dashboard
         </p>
         <p style={{ fontSize: 13, color: "var(--parch-dim)", margin: 0, lineHeight: 1.5 }}>
-          Per-asset risk buffer, deposit-sizing model, and on-chain settlement configuration —
+          Per-asset risk buffer, enforced deposit floors, and on-chain settlement configuration —
           the same figures underwriting every vault, visible to anyone before they lend or borrow.
+        </p>
+      </div>
+
+      {/* Several values below are tuned so that settlement paths are reachable
+          within a single sitting — a 90-second grace period is not a protocol
+          parameter, it is a demo convenience. Left unqualified, a page headed
+          "the same figures underwriting every vault" invites a reader to take
+          them for the product's real settings. */}
+      <div
+        style={{
+          border: "1px solid var(--hairline)",
+          borderLeft: "3px solid var(--brass)",
+          borderRadius: 8,
+          padding: "10px 14px",
+          background: "var(--panel)",
+        }}
+      >
+        <p style={{ fontSize: 12, color: "var(--parch-dim)", margin: 0, lineHeight: 1.6 }}>
+          <span style={{ color: "var(--brass)", fontWeight: 600 }}>Testnet values.</span>{" "}
+          The TWAP window, grace period and keeper bounty below are deliberately short and steep so
+          that every settlement path can be exercised in one sitting. Production requires a
+          30-minute TWAP window and a grace period measured in hours; the deploy guard refuses
+          anything shorter.
         </p>
       </div>
 
@@ -48,7 +73,7 @@ export function PublicDashboard() {
       <div>
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10 }}>
           <p style={{ fontSize: 11, color: "var(--parch-dim)", margin: 0 }}>
-            Recommended minimum deposit for
+            Minimum deposit required for
           </p>
           <DurationSwitcher value={durationDays} onChange={setDurationDays} />
         </div>
@@ -71,15 +96,39 @@ export function PublicDashboard() {
         </div>
       </div>
 
-      <p style={{ fontSize: 11, color: "var(--parch-dim)", margin: 0 }}>
-        Deposit model v{model.version}, dated {model.modelDate}. {model.source}
+      {/* Every figure above is read live from the registry and the pool. The
+          footnote this replaced cited a bundled model dated 23 July whose
+          asset cohort was never deployed on this chain. */}
+      <p style={{ fontSize: 11, color: "var(--parch-dim)", margin: 0, lineHeight: 1.6 }}>
+        All figures read live from the asset registry and insurance pool. Deposit floors are
+        computed on chain from each tier's assumed volatility and the square root of term, and are
+        enforced at origination.
       </p>
     </div>
   );
 }
 
 function AssetCard({ asset, durationDays }) {
-  const dep = recommendedDeposit(asset.symbol, durationDays);
+  const chainId = useChainId();
+  const contracts = getContractsForChain(chainId);
+
+  // The floor the contract will ACTUALLY enforce for this asset's tier at this
+  // term — not a recommendation from a bundled table.
+  //
+  // The table it replaced was keyed by symbol and listed ETH, WBTC, USDC and
+  // USDT: the Arbitrum Sepolia cohort. None of them are deployed, so every
+  // card on this page read "no deposit-sizing data published for this asset
+  // yet" while the protocol was perfectly capable of stating the number. The
+  // deposit floor also stopped being advisory when it moved on chain — it is
+  // refused at origination now, so quoting anything else would be wrong even
+  // if the table had been current.
+  const { data: floorBps } = useReadContract({
+    address: contracts.assetRegistry,
+    abi: ASSET_REGISTRY_ABI,
+    functionName: "minimumDepositBpsForTier",
+    args: [asset.tier ?? 0, BigInt(durationDays * 86400)],
+    query: { enabled: asset.tier !== undefined },
+  });
 
   return (
     <div style={cardStyle}>
@@ -109,16 +158,17 @@ function AssetCard({ asset, durationDays }) {
       </div>
 
       <div style={{ marginTop: 12, paddingTop: 12, borderTop: "1px solid var(--hairline)" }}>
-        {dep ? (
-          <>
-            <Row label="Recommended min. deposit (95%)" value={formatPercent(dep.pct95)} />
-            <Row label="Recommended min. deposit (99%)" value={formatPercent(dep.pct99)} />
-          </>
-        ) : (
-          <p style={{ fontSize: 11, color: "var(--parch-dim)", margin: 0 }}>
-            No deposit-sizing data published for this asset yet.
-          </p>
-        )}
+        <Row
+          label="Risk tier"
+          value={asset.tier === undefined ? "—" : (TIER_LABELS[asset.tier] || `Tier ${asset.tier}`)}
+        />
+        <Row
+          label={`Minimum deposit at ${durationDays}d`}
+          value={floorBps === undefined ? "—" : `${(Number(floorBps) / 100).toFixed(1)}%`}
+        />
+        <p style={{ fontSize: 10.5, color: "var(--slate)", margin: "8px 0 0", lineHeight: 1.5 }}>
+          Enforced at origination, not advisory. Rises with the square root of term.
+        </p>
       </div>
     </div>
   );

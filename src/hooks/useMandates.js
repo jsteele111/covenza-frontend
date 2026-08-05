@@ -109,13 +109,27 @@ export function useMandates({ lenderFilter, onlyLive = true } = {}) {
  *      rather than every block. The contract remains the authority; a fill
  *      reverts if this disagrees.
  */
-export function previewMandateApr(m, termSeconds, depositBps) {
+export function previewMandateApr(m, termSeconds, depositBps, bindingDepositBps) {
   if (!m) return null;
 
   let apr = m.baseAprBps + Math.floor((m.termPremiumBpsPerDay * termSeconds) / 86400);
 
-  if (depositBps > m.minDepositBps) {
-    const credit = Math.floor((m.depositCreditBpsPerPoint * (depositBps - m.minDepositBps)) / 100);
+  // Credit is measured from the BINDING deposit — the greater of the mandate's
+  // own minimum and the protocol's tier floor at this term — matching
+  // VaultFactory.quoteMandateApr.
+  //
+  // Passing only the mandate's minimum paid the borrower for deposit the
+  // protocol had already compelled. Callers that cannot supply the floor fall
+  // back to the mandate's minimum, which is correct wherever the mandate binds
+  // and understates the rate where it does not; the contract is the authority
+  // either way and a fill reverts if this disagrees.
+  const binding =
+    bindingDepositBps !== undefined && bindingDepositBps > m.minDepositBps
+      ? bindingDepositBps
+      : m.minDepositBps;
+
+  if (depositBps > binding) {
+    const credit = Math.floor((m.depositCreditBpsPerPoint * (depositBps - binding)) / 100);
     apr = credit >= apr ? 0 : apr - credit;
   }
 

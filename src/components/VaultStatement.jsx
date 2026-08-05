@@ -21,11 +21,19 @@ export function VaultStatement({ vault }) {
 
   const amount = (value) => `${formatTokenAmount(value, vault.decimals)} ${vault.symbol}`;
 
-  // What the lender receives at settlement: principal + the fixed fee,
-  // charged in full regardless of early or on-time close. This is the
-  // direct successor to the old fixed "repayment due" figure.
-  const lenderReceives = vault.principal != null && vault.fee != null
+  // Two figures, because interest accrues on time elapsed and the difference
+  // between them is the entire economics of closing early.
+  //
+  // A single row labelled "Lender receives (at settlement)" showed only the
+  // first. It reads as "at the end", which is the one thing it does not mean:
+  // on a minutes-old loan it was principal plus the minimum charge, while
+  // holding to the deadline paid several times that.
+  const lenderNow = vault.principal != null && vault.fee != null
     ? vault.principal + vault.fee
+    : undefined;
+
+  const lenderAtTerm = vault.principal != null && vault.fullTermFee != null
+    ? vault.principal + vault.fullTermFee
     : undefined;
 
   return (
@@ -60,7 +68,8 @@ export function VaultStatement({ vault }) {
           label="Interest at full term"
           value={vault.fullTermFee != null ? `${formatTokenAmount(vault.fullTermFee, vault.decimals)} ${vault.symbol}` : "—"}
         />
-        <Row label="Lender receives (at settlement)" value={amount(lenderReceives)} />
+        <Row label="Lender receives if settled now" value={amount(lenderNow)} />
+        <Row label="Lender receives if held to deadline" value={amount(lenderAtTerm)} />
         <Row label="Deadline" value={vault.isSettled ? "Settled" : formatCountdown(vault.deadline)} />
         {vault.isSettled && vault.lossSeverity > 0 && (
           <Row

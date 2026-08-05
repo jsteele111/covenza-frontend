@@ -113,7 +113,6 @@ function MandateCard({ mandate: m, expanded, onToggle, contracts, publicClient, 
   const termSeconds = Math.round(Number(termDays) * DAY);
   const depositBps = Math.round(Number(depositPct) * 100);
 
-  const apr = previewMandateApr(m, termSeconds, depositBps);
   const depositAmount =
     parsedPrincipal !== undefined && Number.isFinite(depositBps)
       ? (parsedPrincipal * BigInt(depositBps)) / 10000n
@@ -148,6 +147,21 @@ function MandateCard({ mandate: m, expanded, onToggle, contracts, publicClient, 
     tierFloor !== undefined && parsedPrincipal
       ? (Number((tierFloor * 10000n) / parsedPrincipal) / 100).toFixed(1)
       : null;
+
+  // Quote against the BINDING deposit, matching VaultFactory.quoteMandateApr.
+  //
+  // Declared here rather than beside the other derived values because it needs
+  // tierFloor, which is a chain read. Pricing from the mandate's minimum alone
+  // credited the borrower for deposit the protocol had compelled — 160bp on a
+  // thirty-day Blue chip loan — so the rate shown here disagreed with the one
+  // the contract would charge.
+  const floorBpsNum =
+    tierFloor !== undefined && parsedPrincipal
+      ? Number((tierFloor * 10000n) / parsedPrincipal)
+      : 0;
+  const bindingBps = Math.max(m.minDepositBps, floorBpsNum);
+
+  const apr = previewMandateApr(m, termSeconds, depositBps, bindingBps);
 
   const reason = !parsedPrincipal
     ? "Enter an amount to borrow."
@@ -213,9 +227,20 @@ function MandateCard({ mandate: m, expanded, onToggle, contracts, publicClient, 
 
   return (
     <div style={cardStyle}>
-      <div
+      {/* A button, not a div with an onClick.
+          As a div it had no role, no tab stop, no focus ring and no keyboard
+          activation — so a keyboard user could not open a mandate, which is to
+          say could not borrow at all. It also gave no affordance that the card
+          did anything until you clicked it. */}
+      <button
+        type="button"
         onClick={onToggle}
-        style={{ display: "flex", justifyContent: "space-between", alignItems: "center", cursor: "pointer" }}
+        aria-expanded={expanded}
+        style={{
+          display: "flex", justifyContent: "space-between", alignItems: "center",
+          cursor: "pointer", width: "100%", background: "transparent",
+          border: "none", padding: 0, textAlign: "left", font: "inherit", color: "inherit",
+        }}
       >
         <div>
           <p style={{ fontSize: 13, color: "var(--parch)", margin: "0 0 4px" }}>
@@ -235,7 +260,7 @@ function MandateCard({ mandate: m, expanded, onToggle, contracts, publicClient, 
         <span style={{ fontSize: 11, color: "var(--brass)", border: "1px solid var(--brass)", borderRadius: 20, padding: "3px 9px" }}>
           from {(previewMandateApr(m, m.minTermSeconds, m.minDepositBps) / 100).toFixed(2)}% APR
         </span>
-      </div>
+      </button>
 
       {expanded && (
         <div style={{ marginTop: 14, paddingTop: 14, borderTop: "1px solid var(--hairline)" }}>

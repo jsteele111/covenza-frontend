@@ -93,29 +93,53 @@ function Shell() {
               path="/dashboard"
               element={<RouteErrorBoundary><PublicDashboard /></RouteErrorBoundary>}
             />
+            {/* Lending is permissionless: a connected wallet is the only
+                requirement. */}
             <Route
               path="/lender"
               element={
-                <GuardedRoute allowed={roles.includes("lender")} isLoading={isLoading}>
+                <GuardedRoute
+                  allowed={isConnected}
+                  isLoading={isLoading}
+                  reason="Lending needs a connected wallet. Nothing else — no verification, no prior loan."
+                >
                   <RouteErrorBoundary><LenderTab /></RouteErrorBoundary>
                 </GuardedRoute>
               }
             />
+            {/* Borrowing needs verification, but the ROUTE must not: the
+                verification gate lives inside BorrowerTab, and gating the
+                route on the very status the gate exists to help you obtain
+                made that gate unreachable by everyone who needed it. The
+                landing page said "Get verified to borrow" and the route
+                bounced you for not being verified. Same bootstrap trap that
+                was fixed for lenders and left open here. */}
             <Route
               path="/borrower"
               element={
-                <GuardedRoute allowed={roles.includes("borrower")} isLoading={isLoading}>
+                <GuardedRoute
+                  allowed={isConnected}
+                  isLoading={isLoading}
+                  reason="Borrowing needs a connected wallet. Verification is the next step, and this page will guide you through it."
+                >
                   <RouteErrorBoundary><BorrowerTab /></RouteErrorBoundary>
                 </GuardedRoute>
               }
             />
+            {/* Deliberately unguarded. Everything the operator view reads —
+                assets, tiers, attesters, pool configuration — is public on
+                chain, and some of it already appears on the dashboard. The
+                write actions check the role themselves.
+
+                It was guarded until the operator role moved to a Safe, at
+                which point the route became unreachable by anyone at all: the
+                Safe holds the role but cannot browse, and the deploying key
+                can browse but no longer holds the role. Gating reads on a
+                credential no browser can present is a guarantee that nobody
+                sees the page. */}
             <Route
               path="/operator"
-              element={
-                <GuardedRoute allowed={roles.includes("operator")} isLoading={isLoading}>
-                  <RouteErrorBoundary><OperatorTab /></RouteErrorBoundary>
-                </GuardedRoute>
-              }
+              element={<RouteErrorBoundary><OperatorTab /></RouteErrorBoundary>}
             />
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>
@@ -170,13 +194,42 @@ function DeploymentHealthBanner() {
   );
 }
 
-function GuardedRoute({ allowed, isLoading, children }) {
+function GuardedRoute({ allowed, isLoading, reason, children }) {
   // Roles arrive from chain reads, so on a cold load into a deep link they
   // are briefly empty. Redirecting on that transient state bounced anyone
   // who opened /lender directly — a refresh, a bookmark, a shared link —
   // back out before the answer had arrived. Absence of a role is only
   // meaningful once the read has actually completed.
   if (isLoading) return null;
-  if (!allowed) return <Navigate to="/" replace />;
+
+  // Say why, rather than redirecting silently.
+  //
+  // The old behaviour sent you to "/" with no message. Following a shared
+  // link to /borrower without a wallet connected was indistinguishable from
+  // the link being broken — and before the landing page had working routes,
+  // it dropped you somewhere offering no way forward.
+  if (!allowed) {
+    return (
+      <div
+        style={{
+          border: "1px solid var(--hairline)",
+          borderRadius: 10,
+          padding: "22px 24px",
+          background: "var(--panel)",
+        }}
+      >
+        <p style={{ fontSize: 15, fontWeight: 600, color: "var(--parch)", margin: "0 0 8px" }}>
+          Connect a wallet to continue
+        </p>
+        <p style={{ fontSize: 13, color: "var(--parch-dim)", margin: "0 0 14px", lineHeight: 1.6 }}>
+          {reason}
+        </p>
+        <Link to="/dashboard" style={{ fontSize: 13, color: "var(--slate)", textDecoration: "none" }}>
+          Or view the protocol dashboard — no wallet required &rarr;
+        </Link>
+      </div>
+    );
+  }
+
   return children;
 }
