@@ -16,8 +16,8 @@ pre-empt a redesign the later routes might argue for.
 
 # RESOLUTION — 5 August 2026
 
-All 23 items actioned. Twenty fixed, two closed by decision, one deferred with
-reasons. Deployed to covenza.xyz against a fresh stack; 236 tests passing.
+All 23 review items actioned, plus 3 defects found while fixing them. Twenty-five
+fixed, one closed by decision, one deferred with reasons. Deployed to covenza.xyz against a fresh stack; 236 tests passing.
 
 ## Verified live after the fix
 
@@ -66,17 +66,20 @@ The borrower is told the trade failed, not that it was too big, and nothing
 suggests the two remedies: a smaller amount, or a different fee tier. A 1 tUSDG
 swap at the same tier succeeded.
 
-**Not fixed.** The preflight would need to distinguish "minimum output not met"
-from "cannot reach the impact floor at any minimum".
+**Fixed.** `explainSwapRefusal()` distinguishes the two cases: if the borrower's
+minimum is at or below what the vault itself would accept, no minimum they could
+set would help, so the message names the real cause and both remedies — a
+smaller amount or a different fee tier. Otherwise it points at the vault's floor
+as the figure to use.
 
 ### 31C — Minimum output goes stale when the amount changes
 
 Changing the swap amount leaves the previously-inserted minimum output in place,
 so a figure quoted for 10 tUSDG persists against a 1 tUSDG trade and the form
-reports a refusal that is an artefact of the stale value. Either clear it or
-re-derive it when the amount changes.
+reports a refusal that is an artefact of the stale value.
 
-**Not fixed.**
+**Fixed.** The minimum clears whenever the amount, destination asset or fee tier
+changes — it is only meaningful against the trade it was quoted for.
 
 ## Closed by decision, not fixed
 

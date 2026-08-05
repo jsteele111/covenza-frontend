@@ -39,7 +39,6 @@ export const KYC_REGISTRY_ABI = parseAbi([
   "function verify(address wallet) external",
   "function verifyWithSignature(address wallet, uint256 expiry, bytes signature) external",
   "function revoke(address wallet) external",
-  "function badgeIdOf(address wallet) view returns (uint256)",
 
   // Covenza recognises attestations issued by identity providers; it does not
   // issue them. The URL is on chain because recognising a provider and telling

@@ -51,14 +51,6 @@ export function KycGate({ address }) {
     query: { enabled: !!address },
   });
 
-  const { data: badgeId } = useReadContract({
-    address: contracts.kycRegistry,
-    abi: kycAbi,
-    functionName: "badgeIdOf",
-    args: [address],
-    query: { enabled: !!address && !!isVerified },
-  });
-
   const { data: attester } = useReadContract({
     address: contracts.kycRegistry,
     abi: kycAbi,
@@ -120,9 +112,8 @@ export function KycGate({ address }) {
         <p style={{ fontSize: 11, color: "var(--parch-dim)", margin: "0 0 8px" }}>KYC status</p>
         <p style={{ fontSize: 14, color: "var(--brass)", margin: 0 }}>Verified</p>
         <p style={{ fontSize: 12, color: "var(--parch-dim)", margin: "8px 0 0", lineHeight: 1.6 }}>
-          This wallet holds a Covenza KYC badge{badgeId ? ` (token #${badgeId.toString()})` : ""} and
-          can borrow.{issuer ? ` Verified by ${issuer.name}.` : ""} The badge records that a check
-          happened — not who you are.
+          This wallet can borrow.{issuer ? ` Attested by ${issuer.name}.` : ""} What is recorded on
+          chain is that a check happened and who performed it — not who you are.
         </p>
       </div>
     );
@@ -143,8 +134,8 @@ export function KycGate({ address }) {
         for this address, which you present here.
       </p>
       <p style={{ fontSize: 12, color: "var(--parch-dim)", margin: "0 0 16px", lineHeight: 1.6 }}>
-        What ends up on chain is a badge saying this wallet passed a check, and nothing about who
-        you are.
+        What ends up on chain is a record that this wallet passed a check, which attester
+        performed it, and when — and nothing about who you are.
       </p>
 
       <p className="mono" style={{ fontSize: 11, color: "var(--parch-dim)", margin: "0 0 16px" }}>
