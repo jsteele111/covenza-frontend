@@ -42,7 +42,7 @@ export function Seal({ vault }) {
       >
         <Icon size={17} color={color} aria-hidden="true" />
       </div>
-      <span style={{ fontSize: 10, color }}>{label}</span>
+      <span style={{ fontSize: 11, color }}>{label}</span>
     </div>
   );
 }

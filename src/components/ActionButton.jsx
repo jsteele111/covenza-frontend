@@ -1,24 +1,23 @@
+/**
+ * The app's action button. Styled by the shared .btn classes (index.css) so
+ * it has hover, pressed and keyboard-focus states; a disabled button says why
+ * underneath rather than just greying out.
+ */
 export function ActionButton({ label, onClick, disabled, disabledReason, primary, loading }) {
+  const isPrimary = primary && !disabled;
   return (
     <div style={{ flex: 1 }}>
       <button
+        type="button"
         onClick={onClick}
         disabled={disabled || loading}
-        style={{
-          width: "100%",
-          background: primary && !disabled ? "var(--brass)" : "transparent",
-          color: primary && !disabled ? "var(--ink)" : "var(--parch-dim)",
-          border: primary && !disabled ? "none" : "1px solid var(--hairline)",
-          borderRadius: 8,
-          padding: 11,
-          fontSize: 13,
-          fontWeight: 500,
-        }}
+        aria-busy={loading || undefined}
+        className={`btn${isPrimary ? " btn-primary" : ""}`}
       >
         {loading ? "Confirming..." : label}
       </button>
       {disabled && disabledReason && (
-        <p style={{ fontSize: 11, color: "var(--parch-dim)", margin: "8px 2px 0" }}>{disabledReason}</p>
+        <p className="note" style={{ margin: "8px 2px 0" }}>{disabledReason}</p>
       )}
     </div>
   );

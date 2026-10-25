@@ -81,7 +81,7 @@ export function VaultActions({ vault, role, onDone }) {
 
   return (
     <div style={cardStyle}>
-      <p style={{ fontSize: 11, color: "var(--parch-dim)", margin: "0 0 12px" }}>
+      <p style={{ fontSize: 12, color: "var(--parch-dim)", margin: "0 0 12px" }}>
         {vault.isSettled ? "Settled" : "Settlement"}
       </p>
 
@@ -314,10 +314,10 @@ function formatSpan(seconds) {
 
 const cardStyle = {
   background: "var(--panel)",
-  borderRadius: 10,
+  borderRadius: "var(--radius)",
   border: "1px solid var(--hairline)",
   padding: "18px 20px",
 };
 
-const noteStyle = { fontSize: 11, color: "var(--parch-dim)", margin: "0 0 12px", lineHeight: 1.5 };
+const noteStyle = { fontSize: 12, color: "var(--parch-dim)", margin: "0 0 12px", lineHeight: 1.5 };
 const errorStyle = { fontSize: 12, color: "var(--brick)", marginTop: 10 };

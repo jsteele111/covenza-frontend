@@ -255,7 +255,7 @@ export function MandatePanel({ selectedAsset, selectedSymbol, decimals }) {
   return (
     <div>
       <p style={sectionLabelStyle}>Publish a mandate</p>
-      <p style={{ fontSize: 11, color: "var(--parch-dim)", margin: "0 0 12px", lineHeight: 1.5 }}>
+      <p style={{ fontSize: 12, color: "var(--parch-dim)", margin: "0 0 12px", lineHeight: 1.5 }}>
         Terms a borrower can take without asking you first. Your capital stays in your wallet —
         you approve the factory for this mandate's total capacity, and each fill draws on it. The
         approval is bounded to that amount, not to your balance. It is one figure per asset,
@@ -277,11 +277,11 @@ export function MandatePanel({ selectedAsset, selectedSymbol, decimals }) {
         gap: 12,
       }}>
         <div>
-          <p style={{ fontSize: 11, color: "var(--parch-dim)", margin: "0 0 3px" }}>Lending capacity</p>
-          <p className="mono" style={{ fontSize: 13, color: capacityShort ? "var(--brick)" : "var(--brass)", margin: 0 }}>
+          <p style={{ fontSize: 12, color: "var(--parch-dim)", margin: "0 0 3px" }}>Lending capacity</p>
+          <p className="mono" style={{ fontSize: 13, color: capacityShort ? "var(--brick)" : "var(--parch)", margin: 0 }}>
             {capacity !== undefined ? `${formatTokenAmount(capacity, decimals)} ${selectedSymbol}` : "—"}
           </p>
-          <p style={{ fontSize: 11, color: "var(--parch-dim)", margin: "4px 0 0", lineHeight: 1.5 }}>
+          <p style={{ fontSize: 12, color: "var(--parch-dim)", margin: "4px 0 0", lineHeight: 1.5 }}>
             {capacityShort
               ? "Below the total capacity below — borrowers will only see what you can actually cover."
               : "The lesser of your balance and your allowance to the factory. Funds stay in your wallet."}
@@ -301,16 +301,16 @@ export function MandatePanel({ selectedAsset, selectedSymbol, decimals }) {
       <div style={cardStyle}>
         <Row2>
           <Field label={`Minimum size (${selectedSymbol})`}>
-            <input value={minPrincipal} onChange={(e) => setMinPrincipal(e.target.value)} style={inputStyle} />
+            <input value={minPrincipal} onChange={(e) => setMinPrincipal(e.target.value)} className="input" />
           </Field>
           <Field label={`Maximum per loan (${selectedSymbol})`}>
-            <input value={maxPrincipal} onChange={(e) => setMaxPrincipal(e.target.value)} style={inputStyle} />
+            <input value={maxPrincipal} onChange={(e) => setMaxPrincipal(e.target.value)} className="input" />
           </Field>
           <Field label={`Total capacity (${selectedSymbol})`}>
-            <input value={totalCapacity} onChange={(e) => setTotalCapacity(e.target.value)} style={inputStyle} />
+            <input value={totalCapacity} onChange={(e) => setTotalCapacity(e.target.value)} className="input" />
           </Field>
         </Row2>
-        <p style={{ fontSize: 11, color: totalBelowMax ? "var(--brick)" : "var(--parch-dim)", margin: "-4px 0 12px", lineHeight: 1.5 }}>
+        <p style={{ fontSize: 12, color: totalBelowMax ? "var(--brick)" : "var(--parch-dim)", margin: "-4px 0 12px", lineHeight: 1.5 }}>
           {totalBelowMax
             ? "Total capacity must be at least the maximum per loan."
             : "The most this mandate lends across all fills. Once it is lent out, the mandate stops filling."}
@@ -318,13 +318,13 @@ export function MandatePanel({ selectedAsset, selectedSymbol, decimals }) {
 
         <Row2>
           <Field label="Shortest term (days)">
-            <input value={minTermDays} onChange={(e) => setMinTermDays(e.target.value)} style={inputStyle} />
+            <input value={minTermDays} onChange={(e) => setMinTermDays(e.target.value)} className="input" />
           </Field>
           <Field label="Longest term (days)">
-            <input value={maxTermDays} onChange={(e) => setMaxTermDays(e.target.value)} style={inputStyle} />
+            <input value={maxTermDays} onChange={(e) => setMaxTermDays(e.target.value)} className="input" />
           </Field>
           <Field label="Valid for (hours)">
-            <input value={validHours} onChange={(e) => setValidHours(e.target.value)} style={inputStyle} />
+            <input value={validHours} onChange={(e) => setValidHours(e.target.value)} className="input" />
           </Field>
         </Row2>
 
@@ -348,14 +348,14 @@ export function MandatePanel({ selectedAsset, selectedSymbol, decimals }) {
           </div>
         </Field>
 
-        <p style={{ fontSize: 11, color: "var(--parch)", margin: "8px 0 8px", fontWeight: 600 }}>Pricing</p>
-        <p style={{ fontSize: 11, color: "var(--parch-dim)", margin: "0 0 10px", lineHeight: 1.5 }}>
+        <p style={{ fontSize: 12, color: "var(--parch)", margin: "8px 0 8px", fontWeight: 600 }}>Pricing</p>
+        <p style={{ fontSize: 12, color: "var(--parch-dim)", margin: "0 0 10px", lineHeight: 1.5 }}>
           A formula, not a range. Publishing a range would mean publishing your worst
           terms — every borrower takes the longest term on the smallest deposit. Here
           both are priced, so you are indifferent across the whole surface.
         </p>
         <p style={{
-          fontSize: 11,
+          fontSize: 12,
           color: belowFloor ? "var(--brick)" : "var(--parch-dim)",
           margin: "0 0 10px",
           lineHeight: 1.5,
@@ -377,31 +377,31 @@ export function MandatePanel({ selectedAsset, selectedSymbol, decimals }) {
 
         <Row2>
           <Field label="Base rate (% APR)">
-            <input value={baseApr} onChange={(e) => setBaseApr(e.target.value)} style={inputStyle} />
+            <input value={baseApr} onChange={(e) => setBaseApr(e.target.value)} className="input" />
           </Field>
           <Field label="Per day of term (bps)">
-            <input value={termPremium} onChange={(e) => setTermPremium(e.target.value)} style={inputStyle} />
+            <input value={termPremium} onChange={(e) => setTermPremium(e.target.value)} className="input" />
           </Field>
         </Row2>
         <Row2>
           <Field label="Credit per % of extra deposit (bps)">
-            <input value={depositCredit} onChange={(e) => setDepositCredit(e.target.value)} style={inputStyle} />
+            <input value={depositCredit} onChange={(e) => setDepositCredit(e.target.value)} className="input" />
           </Field>
           <Field label="Minimum deposit (%)">
-            <input value={minDeposit} onChange={(e) => setMinDeposit(e.target.value)} style={inputStyle} />
+            <input value={minDeposit} onChange={(e) => setMinDeposit(e.target.value)} className="input" />
           </Field>
           <Field label="Rate floor (% APR)">
-            <input value={minApr} onChange={(e) => setMinApr(e.target.value)} style={inputStyle} />
+            <input value={minApr} onChange={(e) => setMinApr(e.target.value)} className="input" />
           </Field>
         </Row2>
 
         <div style={{ background: "var(--ink)", border: "1px solid var(--hairline)", borderRadius: 8, padding: "12px 14px", margin: "0 0 12px" }}>
-          <p style={{ fontSize: 11, color: "var(--parch-dim)", margin: "0 0 8px" }}>What a borrower would pay</p>
+          <p style={{ fontSize: 12, color: "var(--parch-dim)", margin: "0 0 8px" }}>What a borrower would pay</p>
           <Line label={`${minTermDays}d at ${(bindShort / 100).toFixed(1)}% deposit`} value={fmtApr(cheapest)} />
           <Line label={`${maxTermDays}d at ${(bindLong / 100).toFixed(1)}% deposit`} value={fmtApr(dearest)} emphasis />
           <Line label={`${maxTermDays}d at ${((bindLong + 2000) / 100).toFixed(1)}% deposit`} value={fmtApr(generous)} />
           {bindLong > preview.minDepositBps && (
-            <p style={{ fontSize: 10.5, color: "var(--slate)", margin: "8px 0 0", lineHeight: 1.5 }}>
+            <p style={{ fontSize: 12, color: "var(--slate)", margin: "8px 0 0", lineHeight: 1.5 }}>
               Quoted at the deposit a borrower must actually post. At the long end the protocol's
               floor exceeds your {minDeposit}% minimum, so that is the figure that applies — and
               the rate you receive is the undiscounted one, because a borrower earns no credit for
@@ -419,7 +419,7 @@ export function MandatePanel({ selectedAsset, selectedSymbol, decimals }) {
           onClick={publish}
         />
         {justPublished && (
-          <p style={{ fontSize: 12, color: "var(--brass)", marginTop: 10 }}>
+          <p style={{ fontSize: 12, color: "var(--sage)", marginTop: 10 }}>
             Published — it is live below and borrowers can fill it now.
           </p>
         )}
@@ -449,11 +449,11 @@ export function MandatePanel({ selectedAsset, selectedSymbol, decimals }) {
                     {formatTokenAmount(m.minPrincipal, decimals)}–{formatTokenAmount(m.maxPrincipal, decimals)} {m.symbol}
                     {" · "}{m.minTermSeconds / DAY}–{m.maxTermSeconds / DAY}d{" · "}{m.maxTierLabel}
                   </p>
-                  <p style={{ fontSize: 11, color: "var(--parch-dim)", margin: "0 0 2px" }}>
+                  <p style={{ fontSize: 12, color: "var(--parch-dim)", margin: "0 0 2px" }}>
                     lent {formatTokenAmount(m.filled, decimals)} of {formatTokenAmount(m.totalCapacity, decimals)}{" "}
                     {m.symbol} · {formatTokenAmount(m.remaining, decimals)} remaining
                   </p>
-                  <p style={{ fontSize: 11, color: "var(--parch-dim)", margin: 0 }}>
+                  <p style={{ fontSize: 12, color: "var(--parch-dim)", margin: 0 }}>
                     {!m.isLive
                       ? "no longer live"
                       : m.remaining === 0n
@@ -512,28 +512,18 @@ function Field({ label, children }) {
 }
 
 function Row2({ children }) {
-  return <div style={{ display: "flex", gap: 12 }}>{children}</div>;
+  return <div className="row2">{children}</div>;
 }
 
 const sectionLabelStyle = { fontSize: 13, fontWeight: 600, color: "var(--parch)", margin: "0 0 8px" };
 
 const cardStyle = {
   background: "var(--panel)",
-  borderRadius: 10,
+  borderRadius: "var(--radius)",
   border: "1px solid var(--hairline)",
   padding: "18px 20px",
 };
 
-const inputStyle = {
-  width: "100%",
-  background: "var(--ink)",
-  border: "1px solid var(--hairline)",
-  borderRadius: 8,
-  padding: "9px 10px",
-  color: "var(--parch)",
-  fontSize: 13,
-  fontFamily: "IBM Plex Mono, monospace",
-};
 
 const smallDangerButtonStyle = {
   background: "transparent",
@@ -541,7 +531,7 @@ const smallDangerButtonStyle = {
   border: "1px solid var(--brick)",
   borderRadius: 6,
   padding: "5px 11px",
-  fontSize: 11,
+  fontSize: 12,
   fontWeight: 500,
   cursor: "pointer",
 };

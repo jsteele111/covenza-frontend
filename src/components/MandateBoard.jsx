@@ -287,11 +287,11 @@ function MandateCard({ mandate: m, expanded, onToggle, contracts, publicClient, 
             {formatTokenAmount(m.fillable, m.decimals)} {m.symbol}{" "}
             <span style={{ fontSize: 11, color: "var(--parch-dim)" }}>available now</span>
           </p>
-          <p style={{ fontSize: 11, color: "var(--parch-dim)", margin: "0 0 2px" }}>
+          <p style={{ fontSize: 12, color: "var(--parch-dim)", margin: "0 0 2px" }}>
             {formatTokenAmount(m.remaining, m.decimals)} of {formatTokenAmount(m.totalCapacity, m.decimals)}{" "}
             {m.symbol} capacity left · up to {formatTokenAmount(m.maxPrincipal, m.decimals)} per loan
           </p>
-          <p style={{ fontSize: 11, color: "var(--parch-dim)", margin: 0 }}>
+          <p style={{ fontSize: 12, color: "var(--parch-dim)", margin: 0 }}>
             from {shortAddress(m.lender)} · {m.minTermSeconds / DAY}–{m.maxTermSeconds / DAY} days ·
             min deposit {m.minDepositBps / 100}% · up to {m.maxTierLabel}
           </p>
@@ -310,13 +310,13 @@ function MandateCard({ mandate: m, expanded, onToggle, contracts, publicClient, 
         <div style={{ marginTop: 14, paddingTop: 14, borderTop: "1px solid var(--hairline)" }}>
           <Row2>
             <Field label={`Borrow (${m.symbol})`}>
-              <input value={principal} onChange={(e) => setPrincipal(e.target.value)} style={inputStyle} placeholder="0.0" />
+              <input value={principal} onChange={(e) => setPrincipal(e.target.value)} className="input" placeholder="0.0" />
             </Field>
             <Field label="Term (days)">
-              <input value={termDays} onChange={(e) => setTermDays(e.target.value)} style={inputStyle} />
+              <input value={termDays} onChange={(e) => setTermDays(e.target.value)} className="input" />
             </Field>
             <Field label="Deposit (%)">
-              <input value={depositPct} onChange={(e) => setDepositPct(e.target.value)} style={inputStyle} />
+              <input value={depositPct} onChange={(e) => setDepositPct(e.target.value)} className="input" />
             </Field>
           </Row2>
 
@@ -354,7 +354,7 @@ function MandateCard({ mandate: m, expanded, onToggle, contracts, publicClient, 
             onClick={approving ? confirmFill : fill}
           />
 
-          <p style={{ fontSize: 11, color: "var(--parch-dim)", margin: "10px 0 0", lineHeight: 1.5 }}>
+          <p style={{ fontSize: 12, color: "var(--parch-dim)", margin: "10px 0 0", lineHeight: 1.5 }}>
             Filling moves everything in one transaction — the lender's principal, your
             deposit and the insurance premium. Either all of it settles or none of it does.
           </p>
@@ -415,7 +415,7 @@ function Field({ label, children }) {
 }
 
 function Row2({ children }) {
-  return <div style={{ display: "flex", gap: 12 }}>{children}</div>;
+  return <div className="row2">{children}</div>;
 }
 
 function EmptyState({ message }) {
@@ -428,18 +428,8 @@ function EmptyState({ message }) {
 
 const cardStyle = {
   background: "var(--panel)",
-  borderRadius: 10,
+  borderRadius: "var(--radius)",
   border: "1px solid var(--hairline)",
   padding: "16px 18px",
 };
 
-const inputStyle = {
-  width: "100%",
-  background: "var(--ink)",
-  border: "1px solid var(--hairline)",
-  borderRadius: 8,
-  padding: "9px 10px",
-  color: "var(--parch)",
-  fontSize: 13,
-  fontFamily: "IBM Plex Mono, monospace",
-};

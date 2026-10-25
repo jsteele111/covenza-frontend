@@ -147,8 +147,8 @@ export function KycGate({ address, role = "borrower", onEligible }) {
     const issuer = providers.find((p) => p.key.toLowerCase() === (elig.attester || "").toLowerCase());
     return (
       <div style={cardStyle}>
-        <p style={{ fontSize: 11, color: "var(--parch-dim)", margin: "0 0 8px" }}>Eligibility</p>
-        <p style={{ fontSize: 14, color: "var(--brass)", margin: 0 }}>Eligible to {roleWord}</p>
+        <p style={{ fontSize: 12, color: "var(--parch-dim)", margin: "0 0 8px" }}>Eligibility</p>
+        <p style={{ fontSize: 14, color: "var(--sage)", margin: 0 }}>Eligible to {roleWord}</p>
         <ClaimList claims={elig.claims} required={elig.requiredClaims} />
         <p style={{ fontSize: 12, color: "var(--parch-dim)", margin: "8px 0 0", lineHeight: 1.6 }}>
           {elig.manual ? "Granted by the operator." : issuer ? `Attested by ${issuer.name}.` : ""}{" "}
@@ -166,7 +166,7 @@ export function KycGate({ address, role = "borrower", onEligible }) {
 
   return (
     <div style={cardStyle}>
-      <p style={{ fontSize: 11, color: "var(--parch-dim)", margin: "0 0 10px" }}>
+      <p style={{ fontSize: 12, color: "var(--parch-dim)", margin: "0 0 10px" }}>
         {role === "lender" ? "Lending requires a screened wallet" : "Borrowing requires a verified wallet"}
       </p>
 
@@ -189,7 +189,7 @@ export function KycGate({ address, role = "borrower", onEligible }) {
         until when — and nothing about who you are.
       </p>
 
-      <p className="mono" style={{ fontSize: 11, color: "var(--parch-dim)", margin: "0 0 16px" }}>
+      <p className="mono" style={{ fontSize: 12, color: "var(--parch-dim)", margin: "0 0 16px" }}>
         {address}
       </p>
 
@@ -219,7 +219,7 @@ export function KycGate({ address, role = "borrower", onEligible }) {
           <div key={p.key} style={rowStyle}>
             <div>
               <p style={{ fontSize: 13, color: "var(--parch)", margin: "0 0 2px" }}>{p.name}</p>
-              <p className="mono" style={{ fontSize: 10, color: "var(--parch-dim)", margin: 0 }}>
+              <p className="mono" style={{ fontSize: 12, color: "var(--parch-dim)", margin: 0 }}>
                 {p.key}
               </p>
             </div>
@@ -243,7 +243,7 @@ export function KycGate({ address, role = "borrower", onEligible }) {
 
       {/* --- Presenting the result --- */}
       <p style={sectionLabel}>Present an attestation</p>
-      <p style={{ fontSize: 11, color: "var(--parch-dim)", margin: "0 0 12px", lineHeight: 1.6 }}>
+      <p style={{ fontSize: 12, color: "var(--parch-dim)", margin: "0 0 12px", lineHeight: 1.6 }}>
         Paste what your provider gave you — pasting the whole JSON into the signature box fills every
         field. The registry checks it was signed by a recognised provider for this address; one for a
         different wallet, from an unrecognised provider, or past its submission deadline is refused.
@@ -256,40 +256,30 @@ export function KycGate({ address, role = "borrower", onEligible }) {
         onChange={set("signature")}
         onPaste={onSignaturePaste}
         placeholder="0x… or the provider's JSON"
-        style={inputStyle}
+        className="input"
         disabled={busy}
       />
 
-      <div style={{ display: "flex", gap: 10, marginTop: 10 }}>
+      <div className="row2" style={{ gap: 10, marginTop: 10 }}>
         <div style={{ flex: 1 }}>
           <label style={labelStyle}>Claims</label>
-          <input value={form.claims} onChange={set("claims")} placeholder="7" style={inputStyle} disabled={busy} />
+          <input value={form.claims} onChange={set("claims")} placeholder="7" className="input" disabled={busy} />
         </div>
         <div style={{ flex: 2 }}>
           <label style={labelStyle}>Valid until (unix s)</label>
-          <input value={form.validUntil} onChange={set("validUntil")} placeholder="1800000000" style={inputStyle} disabled={busy} />
+          <input value={form.validUntil} onChange={set("validUntil")} placeholder="1800000000" className="input" disabled={busy} />
         </div>
         <div style={{ flex: 2 }}>
           <label style={labelStyle}>Submit by (unix s)</label>
-          <input value={form.deadline} onChange={set("deadline")} placeholder="1785640000" style={inputStyle} disabled={busy} />
+          <input value={form.deadline} onChange={set("deadline")} placeholder="1785640000" className="input" disabled={busy} />
         </div>
       </div>
 
       <button
         onClick={() => present({ ...form, signature: form.signature.trim() })}
         disabled={!canPresent}
-        style={{
-          width: "100%",
-          background: canPresent ? "var(--brass)" : "transparent",
-          color: canPresent ? "var(--ink)" : "var(--parch-dim)",
-          border: canPresent ? "none" : "1px solid var(--hairline)",
-          borderRadius: 8,
-          padding: 11,
-          fontSize: 13,
-          fontWeight: 500,
-          marginTop: 14,
-          cursor: canPresent ? "pointer" : "default",
-        }}
+        className={`btn${canPresent ? " btn-primary" : ""}`}
+        style={{ marginTop: 14 }}
       >
         {status === "submitting" ? "Confirming on-chain…" : "Present attestation"}
       </button>
@@ -297,28 +287,20 @@ export function KycGate({ address, role = "borrower", onEligible }) {
       {/* --- Development stand-in --- */}
       {MOCK_VERIFIER_URL && (
         <div style={{ marginTop: 18, paddingTop: 14, borderTop: "1px solid var(--hairline)" }}>
-          <p style={{ fontSize: 11, color: "var(--brick)", margin: "0 0 6px", lineHeight: 1.6 }}>
+          <p style={{ fontSize: 12, color: "var(--brick)", margin: "0 0 6px", lineHeight: 1.6 }}>
             Development stand-in — a signer will issue an attestation for all three claims without
             checking anything. No documents are examined and no identity is established.
           </p>
           {/* Named because it is not otherwise visible which service answers,
               and a verifier configured for another chain reports on a registry
               the app is not using. That cost an hour to find. */}
-          <p className="mono" style={{ fontSize: 10, color: "var(--parch-dim)", margin: "0 0 8px" }}>
+          <p className="mono" style={{ fontSize: 12, color: "var(--parch-dim)", margin: "0 0 8px" }}>
             {MOCK_VERIFIER_URL}
           </p>
           <button
             onClick={useMockProvider}
             disabled={busy}
-            style={{
-              background: "transparent",
-              color: "var(--parch-dim)",
-              border: "1px solid var(--hairline)",
-              borderRadius: 8,
-              padding: "9px 14px",
-              fontSize: 12,
-              cursor: busy ? "default" : "pointer",
-            }}
+            className="btn btn-auto"
           >
             {status === "requesting" ? "Requesting…" : "Issue a simulated attestation"}
           </button>
@@ -378,18 +360,8 @@ const rowStyle = {
 
 const cardStyle = {
   background: "var(--panel)",
-  borderRadius: 10,
+  borderRadius: "var(--radius)",
   border: "1px solid var(--hairline)",
   padding: "18px 20px",
 };
 
-const inputStyle = {
-  width: "100%",
-  background: "var(--ink)",
-  border: "1px solid var(--hairline)",
-  borderRadius: 8,
-  padding: "9px 10px",
-  color: "var(--parch)",
-  fontSize: 12,
-  fontFamily: "IBM Plex Mono, monospace",
-};

@@ -299,7 +299,7 @@ export function BorrowerTab() {
           <p style={{ fontSize: 13, fontWeight: 600, color: "var(--parch)", margin: "0 0 4px" }}>
             Available mandates
           </p>
-          <p style={{ fontSize: 11, color: "var(--parch-dim)", margin: 0, lineHeight: 1.5 }}>
+          <p style={{ fontSize: 12, color: "var(--parch-dim)", margin: 0, lineHeight: 1.5 }}>
             Lenders publish terms they will accept. Pick one, choose your size, term and
             deposit, and the loan opens in a single transaction.
           </p>
@@ -395,7 +395,7 @@ export function BorrowerTab() {
                   border: `1px solid ${active ? "var(--brass)" : "var(--hairline)"}`,
                   background: active ? "var(--brass)" : "transparent",
                   color: active ? "#1C1C1A" : "var(--parch-dim)",
-                  borderRadius: 6, padding: "5px 12px", fontSize: 11,
+                  borderRadius: 6, padding: "5px 12px", fontSize: 12,
                   cursor: "pointer", fontWeight: active ? 600 : 400,
                 }}
               >
@@ -417,7 +417,7 @@ export function BorrowerTab() {
             <p style={{ fontSize: 13, fontWeight: 600, color: "var(--parch)", margin: "0 0 4px" }}>
               Borrow again
             </p>
-            <p style={{ fontSize: 11, color: "var(--parch-dim)", margin: 0, lineHeight: 1.5 }}>
+            <p style={{ fontSize: 12, color: "var(--parch-dim)", margin: 0, lineHeight: 1.5 }}>
               Nothing outstanding. Any live mandate can be filled straight away.
             </p>
           </div>
@@ -431,7 +431,7 @@ export function BorrowerTab() {
       {/* --- Deposit --- */}
       {!vault.isSettled && !vault.depositPaid && (
         <div style={cardStyle}>
-          <p style={{ fontSize: 11, color: "var(--parch-dim)", margin: "0 0 4px" }}>Deposit</p>
+          <p style={{ fontSize: 12, color: "var(--parch-dim)", margin: "0 0 4px" }}>Deposit</p>
 
           {/* Two amounts leave the borrower's wallet in one transaction, and
               only one of them comes back. */}
@@ -474,7 +474,7 @@ export function BorrowerTab() {
       {/* --- Directional swap --- */}
       {canAct && swapTargets.length > 0 && (
         <div style={cardStyle}>
-          <p style={{ fontSize: 11, color: "var(--parch-dim)", margin: "0 0 12px" }}>
+          <p style={{ fontSize: 12, color: "var(--parch-dim)", margin: "0 0 12px" }}>
             Swap {vault.symbol} for another whitelisted asset
           </p>
 
@@ -487,14 +487,14 @@ export function BorrowerTab() {
               unavailable={unavailableTargets}
             />
             {hasTierBlocked && (
-              <p style={{ fontSize: 10.5, color: "var(--slate)", margin: "6px 0 0", lineHeight: 1.5 }}>
+              <p style={{ fontSize: 12, color: "var(--slate)", margin: "6px 0 0", lineHeight: 1.5 }}>
                 Struck-through assets have sat above this vault's {vault.maxTierLabel} ceiling at some
                 point since the loan began; the lender agreed that ceiling at origination. No amount or
                 price makes them available.
               </p>
             )}
             {hasPoolBlocked && (
-              <p style={{ fontSize: 10.5, color: "var(--slate)", margin: "6px 0 0", lineHeight: 1.5 }}>
+              <p style={{ fontSize: 12, color: "var(--slate)", margin: "6px 0 0", lineHeight: 1.5 }}>
                 Some assets have no pool approved against {vault.symbol} yet, so they cannot be swapped
                 into.
               </p>
@@ -502,7 +502,7 @@ export function BorrowerTab() {
           </Field>
 
           {swapFee ? (
-            <p style={{ fontSize: 11, color: "var(--parch-dim)", margin: "-4px 0 12px", lineHeight: 1.5 }}>
+            <p style={{ fontSize: 12, color: "var(--parch-dim)", margin: "-4px 0 12px", lineHeight: 1.5 }}>
               Trades through the {FEE_LABELS[swapFee] || `${swapFee / 10000}%`} pool
               {heldByAddress.has(swapAsset.toLowerCase())
                 ? " — the pool this vault's open position was bought through."
@@ -512,13 +512,13 @@ export function BorrowerTab() {
 
           <Row2>
             <Field label={`Amount to swap (${vault.symbol})`}>
-              <input value={swapAmountIn} onChange={(e) => setSwapAmountIn(e.target.value)} style={inputStyle} placeholder="0.0" />
+              <input value={swapAmountIn} onChange={(e) => setSwapAmountIn(e.target.value)} className="input" placeholder="0.0" />
             </Field>
             <Field label={`Min. output (${symbolForToken(chainId, swapAsset) || "—"})`}>
-              <input value={swapMinOut} onChange={(e) => setSwapMinOut(e.target.value)} style={inputStyle} placeholder="0.0" />
+              <input value={swapMinOut} onChange={(e) => setSwapMinOut(e.target.value)} className="input" placeholder="0.0" />
               {quoteOk && swapAssetDecimals !== undefined && (
                 <div style={{ display: "flex", alignItems: "baseline", gap: 8, marginTop: 5, flexWrap: "wrap" }}>
-                  <span style={{ fontSize: 10.5, color: "var(--parch-dim)" }}>
+                  <span style={{ fontSize: 11, color: "var(--parch-dim)" }}>
                     TWAP {formatTokenAmount(twapOut, swapAssetDecimals)}
                   </span>
                   <button
@@ -526,18 +526,18 @@ export function BorrowerTab() {
                     onClick={() => setSwapMinOut(formatUnits(floorOut, swapAssetDecimals))}
                     style={{
                       background: "transparent", border: "none", padding: 0,
-                      fontSize: 10.5, color: "var(--brass)", cursor: "pointer", textDecoration: "underline",
+                      fontSize: 11, color: "var(--brass)", cursor: "pointer", textDecoration: "underline",
                     }}
                   >
                     use {formatTokenAmount(floorOut, swapAssetDecimals)}
                   </button>
-                  <span style={{ fontSize: 10.5, color: "var(--slate)" }}>
+                  <span style={{ fontSize: 11, color: "var(--slate)" }}>
                     — the least this vault accepts
                   </span>
                 </div>
               )}
               {parsedSwapIn && swapQuote && !quoteOk && (
-                <p style={{ fontSize: 10.5, color: "var(--brick)", margin: "5px 0 0", lineHeight: 1.5 }}>
+                <p style={{ fontSize: 12, color: "var(--brick)", margin: "5px 0 0", lineHeight: 1.5 }}>
                   The approved pool cannot be priced right now — it has too little price history for the
                   TWAP window — so the swap would be refused.
                 </p>
@@ -545,7 +545,7 @@ export function BorrowerTab() {
             </Field>
           </Row2>
 
-          <p style={{ fontSize: 11, color: "var(--parch-dim)", margin: "-4px 0 12px", lineHeight: 1.5 }}>
+          <p style={{ fontSize: 12, color: "var(--parch-dim)", margin: "-4px 0 12px", lineHeight: 1.5 }}>
             Minimum output is your own slippage protection, enforced on-chain. The TWAP above is
             the reference price; the vault refuses anything more than a short distance below it,
             so setting your minimum under that figure does not buy you a looser trade.
@@ -570,7 +570,7 @@ export function BorrowerTab() {
       {/* --- Swap back held assets --- */}
       {canAct && heldAssets.length > 0 && (
         <div>
-          <p style={{ fontSize: 11, color: "var(--parch-dim)", margin: "0 0 10px" }}>
+          <p style={{ fontSize: 12, color: "var(--parch-dim)", margin: "0 0 10px" }}>
             Held foreign assets ({heldAssets.length}) — sold back to {vault.symbol} at settlement
             if not closed manually first
           </p>
@@ -655,7 +655,7 @@ function SwapBackRow({ vaultAddress, held, loanSymbol, loanDecimals, onDone }) {
         <span className="mono" style={{ fontSize: 13, color: "var(--parch)" }}>
           {held.symbol}
           {held.feeTier ? (
-            <span style={{ fontSize: 10.5, color: "var(--parch-dim)" }}> · {FEE_LABELS[held.feeTier] || held.feeTier} pool</span>
+            <span style={{ fontSize: 11, color: "var(--parch-dim)" }}> · {FEE_LABELS[held.feeTier] || held.feeTier} pool</span>
           ) : null}
         </span>
         <span className="mono" style={{ fontSize: 12, color: "var(--parch-dim)" }}>
@@ -673,7 +673,7 @@ function SwapBackRow({ vaultAddress, held, loanSymbol, loanDecimals, onDone }) {
         </span>
       </div>
       {donated && (
-        <p style={{ fontSize: 10.5, color: "var(--slate)", margin: "0 0 10px", lineHeight: 1.5 }}>
+        <p style={{ fontSize: 12, color: "var(--slate)", margin: "0 0 10px", lineHeight: 1.5 }}>
           The vault's balance is {formatTokenAmount(held.balance, held.decimals)}; the excess was sent to it
           directly rather than bought, and is not counted as the position.
         </p>
@@ -683,15 +683,15 @@ function SwapBackRow({ vaultAddress, held, loanSymbol, loanDecimals, onDone }) {
           <input
             value={amountIn}
             onChange={(e) => setAmountIn(e.target.value)}
-            style={inputStyle}
+            className="input"
             placeholder={formatTokenAmount(max, held.decimals)}
           />
         </Field>
         <Field label={`Min. output (${loanSymbol})`}>
-          <input value={minOut} onChange={(e) => setMinOut(e.target.value)} style={inputStyle} placeholder="0.0" />
+          <input value={minOut} onChange={(e) => setMinOut(e.target.value)} className="input" placeholder="0.0" />
         </Field>
       </Row2>
-      <p style={{ fontSize: 10.5, color: "var(--parch-dim)", margin: "-4px 0 10px", lineHeight: 1.5 }}>
+      <p style={{ fontSize: 12, color: "var(--parch-dim)", margin: "-4px 0 10px", lineHeight: 1.5 }}>
         The vault never sells below the TWAP less its tolerance, whatever minimum is entered here;
         a higher minimum only tightens it.
       </p>
@@ -703,7 +703,7 @@ function SwapBackRow({ vaultAddress, held, loanSymbol, loanDecimals, onDone }) {
         loading={isPending || isConfirming}
         onClick={() => call(vaultAddress, "swapBack", [held.address, parsedAmountIn, parsedMinOut])}
       />
-      {error && <p style={{ fontSize: 11, color: "var(--brick)", marginTop: 8 }}>{error.shortMessage || error.message}</p>}
+      {error && <p style={{ fontSize: 12, color: "var(--brick)", marginTop: 8 }}>{error.shortMessage || error.message}</p>}
     </div>
   );
 }
@@ -782,7 +782,7 @@ function Field({ label, children }) {
 }
 
 function Row2({ children }) {
-  return <div style={{ display: "flex", gap: 12 }}>{children}</div>;
+  return <div className="row2">{children}</div>;
 }
 
 function EmptyState({ message }) {
@@ -795,21 +795,11 @@ function EmptyState({ message }) {
 
 const cardStyle = {
   background: "var(--panel)",
-  borderRadius: 10,
+  borderRadius: "var(--radius)",
   border: "1px solid var(--hairline)",
   padding: "18px 20px",
 };
 
-const inputStyle = {
-  width: "100%",
-  background: "var(--ink)",
-  border: "1px solid var(--hairline)",
-  borderRadius: 8,
-  padding: "9px 10px",
-  color: "var(--parch)",
-  fontSize: 13,
-  fontFamily: "IBM Plex Mono, monospace",
-};
 
 /**
  * Confirms the wallet may borrow, by whose attestation, and until when.
@@ -837,7 +827,7 @@ function EligibleBadge({ elig }) {
         background: "var(--panel)",
       }}
     >
-      <span style={{ color: "var(--brass)", fontSize: 13 }}>&#10003;</span>
+      <span style={{ color: "var(--sage)", fontSize: 13 }}>&#10003;</span>
       <div>
         <span style={{ fontSize: 12, color: "var(--parch)" }}>Eligible — you can borrow</span>
         <span style={{ fontSize: 11, color: daysLeft !== null && daysLeft < 14 ? "var(--brick)" : "var(--parch-dim)" }}>

@@ -34,7 +34,7 @@ export function VaultStatement({ vault }) {
     <div style={cardStyle}>
       <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", marginBottom: 16 }}>
         <div>
-          <p style={{ fontSize: 11, color: "var(--parch-dim)", margin: "0 0 4px" }}>
+          <p style={{ fontSize: 12, color: "var(--parch-dim)", margin: "0 0 4px" }}>
             Vault statement — <span style={{ color: "var(--parch)" }}>{vault.symbol}</span>
           </p>
           <p className="mono" style={{ fontSize: 12, color: "var(--parch-dim)", margin: 0 }}>
@@ -71,7 +71,7 @@ export function VaultStatement({ vault }) {
 
       {!vault.isSettled && vault.heldAssetCount > 0 && (
         <div style={panelStyle}>
-          <p style={{ fontSize: 11, color: "var(--parch-dim)", margin: 0, lineHeight: 1.5 }}>
+          <p style={{ fontSize: 12, color: "var(--parch-dim)", margin: 0, lineHeight: 1.5 }}>
             Holding {vault.heldAssetCount} foreign asset{vault.heldAssetCount > 1 ? "s" : ""} from directional
             swaps. Settlement sells {vault.heldAssetCount > 1 ? "them" : "it"} back to {vault.symbol} at no worse
             than the TWAP less the tolerance; if a held asset cannot be sold at all, the loan can be settled in
@@ -88,7 +88,7 @@ function Outcome({ vault, amount }) {
   const inKind = vault.settledInKind;
   return (
     <div style={panelStyle}>
-      <p style={{ fontSize: 11, color: "var(--parch-dim)", margin: "0 0 10px" }}>
+      <p style={{ fontSize: 12, color: "var(--parch-dim)", margin: "0 0 10px" }}>
         Outcome — <span style={{ color: severityColor(vault.lossSeverity) }}>{vault.lossSeverityLabel}</span>
       </p>
       <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
@@ -102,7 +102,7 @@ function Outcome({ vault, amount }) {
         {vault.settledBounty > 0n && <Row small label="Keeper bounty" value={amount(vault.settledBounty)} />}
       </div>
       {inKind && (
-        <p style={{ fontSize: 11, color: "var(--parch-dim)", margin: "10px 0 0", lineHeight: 1.5 }}>
+        <p style={{ fontSize: 12, color: "var(--parch-dim)", margin: "10px 0 0", lineHeight: 1.5 }}>
           Settled in kind: assets the vault could not sell were handed over at their TWAP value — to the
           lender up to what was still owed, the rest to the borrower. Those handovers are not in the cash
           figures above, so whether the lender was made whole cannot be read from them alone.
@@ -114,8 +114,8 @@ function Outcome({ vault, amount }) {
 
 function severityColor(severity) {
   if (severity === 2) return "var(--brick)";
-  if (severity === 1 || severity === 3) return "var(--brass)";
-  return "var(--slate)";
+  if (severity === 1 || severity === 3) return "var(--slate)";
+  return "var(--sage)";
 }
 
 function Row({ label, value, small }) {
@@ -129,7 +129,7 @@ function Row({ label, value, small }) {
 
 const cardStyle = {
   background: "var(--panel)",
-  borderRadius: 10,
+  borderRadius: "var(--radius)",
   border: "1px solid var(--hairline)",
   padding: "18px 20px",
 };

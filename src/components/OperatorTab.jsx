@@ -30,7 +30,7 @@ const FEE_LABELS = { 100: "0.01%", 500: "0.05%", 3000: "0.3%", 10000: "1%" };
 // Colour carries the ordering so risk reads at a glance rather than needing
 // the label parsed. Labels themselves come from useVaultData, which is the
 // single place AssetRegistry.RiskTier is mirrored.
-const TIER_COLOURS = { 0: "var(--brass)", 1: "var(--slate)", 2: "var(--brick)" };
+const TIER_COLOURS = { 0: "var(--sage)", 1: "var(--slate)", 2: "var(--brick)" };
 
 const verifiedEvent = parseAbiItem(
   "event AddressVerified(address indexed wallet, uint256 timestamp, bool viaSignature)"
@@ -213,7 +213,7 @@ export function OperatorTab() {
       {/* --- Loss history: visibility layer for manual revocation review --- */}
       <div>
         <p style={sectionLabelStyle}>Settlement loss history</p>
-        <p style={{ fontSize: 11, color: "var(--parch-dim)", margin: "0 0 4px" }}>
+        <p style={{ fontSize: 12, color: "var(--parch-dim)", margin: "0 0 4px" }}>
           Settled vaults with a loss, and vaults settled in kind — revocation is never automatic;
           review each case and decide whether it warrants pulling the borrower's verification.
         </p>
@@ -257,7 +257,7 @@ export function OperatorTab() {
                   <p className="mono" style={{ fontSize: 12, color: "var(--parch)", margin: "8px 0 0" }}>
                     {shortAddress(v.address)}
                   </p>
-                  <p style={{ fontSize: 11, color: "var(--parch-dim)", margin: "2px 0 0" }}>
+                  <p style={{ fontSize: 12, color: "var(--parch-dim)", margin: "2px 0 0" }}>
                     Borrower: <span className="mono">{shortAddress(v.borrower)}</span>
                   </p>
                 </div>
@@ -272,7 +272,7 @@ export function OperatorTab() {
                 <Row label="Lender received" value={amount(v.settledLenderPayout)} />
                 <Row label="Borrower received" value={amount(v.settledBorrowerPayout)} />
                 {isInKind && (
-                  <p style={{ fontSize: 11, color: "var(--parch-dim)", margin: "4px 0 0", lineHeight: 1.5 }}>
+                  <p style={{ fontSize: 12, color: "var(--parch-dim)", margin: "4px 0 0", lineHeight: 1.5 }}>
                     Cash only. The vault could not sell every held asset, so the lender also received
                     assets at their TWAP value. Not by itself evidence of a loss — check whether the
                     asset was frozen or its pool drained before judging the borrower.
@@ -305,7 +305,7 @@ export function OperatorTab() {
       {/* --- Existing verified-address list and manual revoke --- */}
       <div>
         <p style={sectionLabelStyle}>Verified addresses</p>
-        <p style={{ fontSize: 11, color: "var(--parch-dim)", margin: "0 0 4px" }}>
+        <p style={{ fontSize: 12, color: "var(--parch-dim)", margin: "0 0 4px" }}>
           Wallets are admitted by a recognised provider's attestation, which now expires on its own
           (at most 365 days). Revoke here for any other reason — a sanctions match, a failed
           re-screening — and it takes effect immediately for borrowing and lending alike.
@@ -399,13 +399,13 @@ function NotTheOperatorNotice({ operatorAddress, connected }) {
         Everything here is public on chain and readable by anyone. The controls are disabled
         because changing any of it requires the operator role.
       </p>
-      <p className="mono" style={{ fontSize: 11, color: "var(--parch-dim)", margin: "0 0 2px" }}>
+      <p className="mono" style={{ fontSize: 12, color: "var(--parch-dim)", margin: "0 0 2px" }}>
         operator&nbsp;&nbsp;{operatorAddress || "—"}
       </p>
-      <p className="mono" style={{ fontSize: 11, color: "var(--parch-dim)", margin: 0 }}>
+      <p className="mono" style={{ fontSize: 12, color: "var(--parch-dim)", margin: 0 }}>
         you&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;{connected || "not connected"}
       </p>
-      <p style={{ fontSize: 11.5, color: "var(--slate)", margin: "10px 0 0", lineHeight: 1.6 }}>
+      <p style={{ fontSize: 12.5, color: "var(--slate)", margin: "10px 0 0", lineHeight: 1.6 }}>
         If the operator is a multisig it cannot browse this page directly. Connect it as a wallet
         through WalletConnect, or make the change from a script — either way the transaction goes
         to the multisig for signing.
@@ -542,16 +542,16 @@ function AttesterPanel() {
       <div style={cardStyle}>
         <Row2>
           <Field label="Signing key">
-            <input value={key} onChange={(e) => setKey(e.target.value)} placeholder="0x…" style={inputStyle} />
+            <input value={key} onChange={(e) => setKey(e.target.value)} placeholder="0x…" className="input" />
           </Field>
           <Field label="Provider name">
-            <input value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. Sumsub" style={inputStyle} />
+            <input value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. Sumsub" className="input" />
           </Field>
         </Row2>
         <Field label="Where borrowers get verified">
-          <input value={url} onChange={(e) => setUrl(e.target.value)} placeholder="https://…" style={inputStyle} />
+          <input value={url} onChange={(e) => setUrl(e.target.value)} placeholder="https://…" className="input" />
         </Field>
-        <p style={{ fontSize: 11, color: "var(--parch-dim)", margin: "-4px 0 12px", lineHeight: 1.5 }}>
+        <p style={{ fontSize: 12, color: "var(--parch-dim)", margin: "-4px 0 12px", lineHeight: 1.5 }}>
           The URL is stored on chain and shown to unverified borrowers. Recognising a provider and
           telling people where to find them are one decision.
         </p>
@@ -585,7 +585,7 @@ function AttesterPanel() {
             <p style={{ fontSize: 12, color: "var(--brass)", margin: "0 0 4px", fontWeight: 600 }}>
               {isMature ? "Ready to recognise" : "Announced — waiting"}
             </p>
-            <p style={{ fontSize: 11, color: "var(--parch-dim)", margin: "0 0 10px", lineHeight: 1.5 }}>
+            <p style={{ fontSize: 12, color: "var(--parch-dim)", margin: "0 0 10px", lineHeight: 1.5 }}>
               {isMature
                 ? "The delay has elapsed. Executing uses exactly these arguments — changing any field means announcing again."
                 : `Executable in ${formatDuration(Number(secondsLeft ?? 0))}. Anyone watching this contract can see it pending, which is the point.`}
@@ -625,13 +625,13 @@ function AttesterPanel() {
             <div style={{ minWidth: 0 }}>
               <p style={{ fontSize: 13, color: a.recognised ? "var(--parch)" : "var(--parch-dim)", margin: "0 0 2px" }}>
                 {a.name}{" "}
-                <span style={{ fontSize: 11, color: a.recognised ? "var(--brass)" : "var(--parch-dim)" }}>
+                <span style={{ fontSize: 11, color: a.recognised ? "var(--sage)" : "var(--parch-dim)" }}>
                   {a.recognised ? "recognised" : "delisted"}
                 </span>
               </p>
-              <p className="mono" style={{ fontSize: 10, color: "var(--parch-dim)", margin: 0 }}>{a.key}</p>
+              <p className="mono" style={{ fontSize: 12, color: "var(--parch-dim)", margin: 0 }}>{a.key}</p>
               {a.url && (
-                <p style={{ fontSize: 11, color: "var(--parch-dim)", margin: "2px 0 0", overflowWrap: "anywhere" }}>{a.url}</p>
+                <p style={{ fontSize: 12, color: "var(--parch-dim)", margin: "2px 0 0", overflowWrap: "anywhere" }}>{a.url}</p>
               )}
             </div>
             {a.recognised && (
@@ -648,7 +648,7 @@ function AttesterPanel() {
       </div>
 
       {all.length > 0 && (
-        <p style={{ fontSize: 11, color: "var(--parch-dim)", margin: "10px 0 0", lineHeight: 1.5 }}>
+        <p style={{ fontSize: 12, color: "var(--parch-dim)", margin: "10px 0 0", lineHeight: 1.5 }}>
           Delisted providers stay listed: the record of who admitted whom is worth more than a tidy
           list. Delisting stops new admissions and leaves existing verifications standing — dropping
           a provider commercially is not the same as doubting every check they ran. Revoke those
@@ -840,10 +840,10 @@ function AssetWhitelistPanel() {
       <div style={cardStyle}>
         <Row2>
           <Field label="Asset address">
-            <input value={newAsset} onChange={(e) => onCandidateChange(e.target.value)} style={inputStyle} placeholder="0x..." />
+            <input value={newAsset} onChange={(e) => onCandidateChange(e.target.value)} className="input" placeholder="0x..." />
           </Field>
           <Field label="Grace extension (hours)">
-            <input value={newGraceHours} onChange={(e) => setNewGraceHours(e.target.value)} style={inputStyle} placeholder="0" />
+            <input value={newGraceHours} onChange={(e) => setNewGraceHours(e.target.value)} className="input" placeholder="0" />
           </Field>
         </Row2>
 
@@ -884,7 +884,7 @@ function AssetWhitelistPanel() {
         <PreflightReport preflight={preflight} />
 
         {preflight.ready && preflight.starvablePairs?.length > 0 && (
-          <p style={{ fontSize: 11, color: "var(--brick)", margin: "0 0 12px", lineHeight: 1.5 }}>
+          <p style={{ fontSize: 12, color: "var(--brick)", margin: "0 0 12px", lineHeight: 1.5 }}>
             {preflight.starvablePairs.length} quotable pool{preflight.starvablePairs.length === 1 ? " keeps" : "s keep"}{" "}
             too little price history for the {preflight.twapWindow}s window — no more slots than the
             window has seconds — so {preflight.starvablePairs.length === 1 ? "it" : "they"} cannot be
@@ -925,7 +925,7 @@ function AssetWhitelistPanel() {
             <div key={a.address} style={{ ...cardStyle, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
               <div>
                 <p className="mono" style={{ fontSize: 13, color: "var(--parch)", margin: "0 0 4px" }}>{a.symbol}</p>
-                <p className="mono" style={{ fontSize: 11, color: "var(--parch-dim)", margin: "0 0 6px" }}>{shortAddress(a.address)}</p>
+                <p className="mono" style={{ fontSize: 12, color: "var(--parch-dim)", margin: "0 0 6px" }}>{shortAddress(a.address)}</p>
 
                 {/* Re-tagging is recorded in the asset's tier history. Vaults
                     check the RISKIEST tier the asset has held since they
@@ -943,7 +943,7 @@ function AssetWhitelistPanel() {
                         disabled={busy}
                         onClick={() => setAssetTier(a.address, t)}
                         style={{
-                          border: "none", borderRadius: 4, padding: "3px 9px", fontSize: 10,
+                          border: "none", borderRadius: 4, padding: "3px 9px", fontSize: 11,
                           cursor: busy ? "default" : "pointer",
                           background: active ? TIER_COLOURS[t] : "transparent",
                           color: active ? "#1C1C1A" : "var(--parch-dim)",
@@ -960,8 +960,8 @@ function AssetWhitelistPanel() {
                 <span
                   style={{
                     fontSize: 11,
-                    color: a.whitelisted ? "var(--brass)" : "var(--parch-dim)",
-                    border: `1px solid ${a.whitelisted ? "var(--brass)" : "var(--hairline)"}`,
+                    color: a.whitelisted ? "var(--sage)" : "var(--parch-dim)",
+                    border: `1px solid ${a.whitelisted ? "var(--sage)" : "var(--hairline)"}`,
                     borderRadius: 20,
                     padding: "2px 8px",
                   }}
@@ -1111,7 +1111,7 @@ function TimelockedCall({
           <p style={{ fontSize: 12, color: "var(--brass)", margin: "0 0 4px", fontWeight: 600 }}>
             {isMature ? "Ready to execute" : "Announced — waiting"}
           </p>
-          <p style={{ fontSize: 11, color: "var(--parch-dim)", margin: "0 0 10px", lineHeight: 1.5 }}>
+          <p style={{ fontSize: 12, color: "var(--parch-dim)", margin: "0 0 10px", lineHeight: 1.5 }}>
             {isMature
               ? `The delay has elapsed. Executing sends exactly these values — change any of them and it must be announced again. Lapses ${new Date(deadline * 1000).toLocaleString()}.`
               : `Executable in ${formatDuration(secondsLeft)}. Anyone watching this contract can see it pending, which is the point.`}
@@ -1132,7 +1132,7 @@ function TimelockedCall({
         </div>
       )}
       {lapsed && (
-        <p style={{ fontSize: 11, color: "var(--parch-dim)", marginTop: 8 }}>
+        <p style={{ fontSize: 12, color: "var(--parch-dim)", marginTop: 8 }}>
           An earlier announcement of exactly this change lapsed unexecuted; announce it again.
         </p>
       )}
@@ -1190,7 +1190,7 @@ function ApprovedPoolPanel() {
   return (
     <div>
       <p style={sectionLabelStyle}>Approved pools</p>
-      <p style={{ fontSize: 11, color: "var(--parch-dim)", margin: "0 0 10px", lineHeight: 1.5 }}>
+      <p style={{ fontSize: 12, color: "var(--parch-dim)", margin: "0 0 10px", lineHeight: 1.5 }}>
         The protocol, not the borrower, names the pool each pair trades through. A pair with no
         approved pool cannot be swapped. A pool qualifies only if it keeps more price-history slots
         than the {twapWindow ?? "—"}s TWAP window has seconds.
@@ -1269,7 +1269,7 @@ function PoolPairRow({ tokenA, tokenB, current, uniFactory, twapWindow, onDone }
         <span className="mono" style={{ fontSize: 13, color: "var(--parch)" }}>
           {symbolForToken(chainId, tokenA)} / {symbolForToken(chainId, tokenB)}
         </span>
-        <span style={{ fontSize: 11, color: current ? "var(--brass)" : "var(--parch-dim)" }}>
+        <span style={{ fontSize: 11, color: current ? "var(--sage)" : "var(--parch-dim)" }}>
           {current === undefined ? "—" : current ? `approved: ${FEE_LABELS[current] || current}` : "no approved pool"}
         </span>
       </div>
@@ -1294,12 +1294,12 @@ function PoolPairRow({ tokenA, tokenB, current, uniFactory, twapWindow, onDone }
           );
         })}
       </div>
-      <p style={{ fontSize: 11, color: "var(--parch-dim)", margin: "0 0 10px" }}>
+      <p style={{ fontSize: 12, color: "var(--parch-dim)", margin: "0 0 10px" }}>
         {tiers.map((t) => (
           <span key={t.fee} style={{ marginRight: 12 }}>
             {FEE_LABELS[t.fee]}:{" "}
             {!t.pool ? "no pool" : t.cardinality === undefined ? "…" : (
-              <span style={{ color: t.qualifies ? "var(--brass)" : "var(--brick)" }}>
+              <span style={{ color: t.qualifies ? "var(--sage)" : "var(--brick)" }}>
                 {t.cardinality} slots
               </span>
             )}
@@ -1316,7 +1316,7 @@ function PoolPairRow({ tokenA, tokenB, current, uniFactory, twapWindow, onDone }
         onDone={() => { setFee(null); onDone(); }}
       />
       {Boolean(current) && (
-        <p style={{ fontSize: 10.5, color: "var(--slate)", margin: "8px 0 0", lineHeight: 1.5 }}>
+        <p style={{ fontSize: 12, color: "var(--slate)", margin: "8px 0 0", lineHeight: 1.5 }}>
           Changing it applies to new positions only; a vault already holding the asset keeps the pool it
           bought through.
         </p>
@@ -1400,7 +1400,7 @@ function InsurancePoolPanel() {
     <div>
       <p style={sectionLabelStyle}>Insurance pool</p>
       <div style={cardStyle}>
-        <p style={{ fontSize: 11, color: "var(--parch-dim)", margin: "0 0 12px", lineHeight: 1.5 }}>
+        <p style={{ fontSize: 12, color: "var(--parch-dim)", margin: "0 0 12px", lineHeight: 1.5 }}>
           A settlement draws the lesser of{" "}
           <strong>{drawCapBps != null ? `${Number(drawCapBps) / 100}%` : "—"} of the loan's principal</strong> and{" "}
           <strong>{maxDrawShareBps != null ? `${Number(maxDrawShareBps) / 100}%` : "—"} of the asset's reserve</strong>.
@@ -1416,7 +1416,7 @@ function InsurancePoolPanel() {
         )}
 
         <Field label="New draw cap (bps of principal, e.g. 1000 = 10%)">
-          <input value={newDrawCap} onChange={(e) => setNewDrawCap(e.target.value)} style={inputStyle} placeholder="1000" />
+          <input value={newDrawCap} onChange={(e) => setNewDrawCap(e.target.value)} className="input" placeholder="1000" />
         </Field>
         <TimelockedCall
           contract={contracts.insurancePool}
@@ -1429,7 +1429,7 @@ function InsurancePoolPanel() {
 
         <div style={{ height: 14 }} />
         <Field label="New reserve share per draw (bps of reserve, e.g. 500 = 5%)">
-          <input value={newDrawShare} onChange={(e) => setNewDrawShare(e.target.value)} style={inputStyle} placeholder="500" />
+          <input value={newDrawShare} onChange={(e) => setNewDrawShare(e.target.value)} className="input" placeholder="500" />
         </Field>
         <TimelockedCall
           contract={contracts.insurancePool}
@@ -1442,7 +1442,7 @@ function InsurancePoolPanel() {
       </div>
 
       <div style={{ ...cardStyle, marginTop: 12 }}>
-        <p style={{ fontSize: 11, color: "var(--parch-dim)", margin: "0 0 12px", lineHeight: 1.5 }}>
+        <p style={{ fontSize: 12, color: "var(--parch-dim)", margin: "0 0 12px", lineHeight: 1.5 }}>
           Administrative withdrawal — always timelocked. The announcement binds asset, recipient and
           amount together, and the amount is checked against the reserve again at execution, since
           settlements may draw it down while the withdrawal waits.
@@ -1452,10 +1452,10 @@ function InsurancePoolPanel() {
         </Field>
         <Row2>
           <Field label="Recipient address">
-            <input value={withdrawTo} onChange={(e) => setWithdrawTo(e.target.value)} style={inputStyle} placeholder="0x..." />
+            <input value={withdrawTo} onChange={(e) => setWithdrawTo(e.target.value)} className="input" placeholder="0x..." />
           </Field>
           <Field label="Amount">
-            <input value={withdrawAmount} onChange={(e) => setWithdrawAmount(e.target.value)} style={inputStyle} placeholder="0.0" />
+            <input value={withdrawAmount} onChange={(e) => setWithdrawAmount(e.target.value)} className="input" placeholder="0.0" />
           </Field>
         </Row2>
         <TimelockedCall
@@ -1539,7 +1539,7 @@ function SettlementConfigPanel() {
     <div>
       <p style={sectionLabelStyle}>Settlement configuration</p>
       <div style={cardStyle}>
-        <p style={{ fontSize: 11, color: "var(--parch-dim)", margin: "0 0 12px", lineHeight: 1.5 }}>
+        <p style={{ fontSize: 12, color: "var(--parch-dim)", margin: "0 0 12px", lineHeight: 1.5 }}>
           All five values are set together, atomically — a deliberate statement of settlement policy,
           not a partial tweak. Every change is timelocked, because open vaults read all five at
           settlement and every direction hurts someone. A longer TWAP window also needs every approved
@@ -1547,22 +1547,22 @@ function SettlementConfigPanel() {
         </p>
         <Row2>
           <Field label="TWAP window (seconds)">
-            <input value={twapWindow} onChange={(e) => setTwapWindow(e.target.value)} style={inputStyle} />
+            <input value={twapWindow} onChange={(e) => setTwapWindow(e.target.value)} className="input" />
           </Field>
           <Field label="TWAP tolerance (bps)">
-            <input value={twapToleranceBps} onChange={(e) => setTwapToleranceBps(e.target.value)} style={inputStyle} />
+            <input value={twapToleranceBps} onChange={(e) => setTwapToleranceBps(e.target.value)} className="input" />
           </Field>
         </Row2>
         <Row2>
           <Field label="Swap-back grace period (seconds)">
-            <input value={swapBackGracePeriod} onChange={(e) => setSwapBackGracePeriod(e.target.value)} style={inputStyle} />
+            <input value={swapBackGracePeriod} onChange={(e) => setSwapBackGracePeriod(e.target.value)} className="input" />
           </Field>
           <Field label="Bounty rate (bps per hour)">
-            <input value={bountyRatePerHourBps} onChange={(e) => setBountyRatePerHourBps(e.target.value)} style={inputStyle} />
+            <input value={bountyRatePerHourBps} onChange={(e) => setBountyRatePerHourBps(e.target.value)} className="input" />
           </Field>
         </Row2>
         <Field label="Bounty cap (bps)">
-          <input value={bountyCapBps} onChange={(e) => setBountyCapBps(e.target.value)} style={inputStyle} />
+          <input value={bountyCapBps} onChange={(e) => setBountyCapBps(e.target.value)} className="input" />
         </Field>
         <TimelockedCall
           contract={contracts.assetRegistry}
@@ -1638,7 +1638,7 @@ function PreflightReport({ preflight }) {
                 <span className="mono" style={{ fontSize: 12, color: "var(--parch)" }}>
                   {p.counterpartySymbol} @ {p.feeLabel}
                 </span>
-                <span style={{ fontSize: 11, color: ok ? "var(--brass)" : "var(--brick)", textAlign: "right" }}>
+                <span style={{ fontSize: 11, color: ok ? "var(--sage)" : "var(--brick)", textAlign: "right" }}>
                   {ok
                     ? `quotable${p.cardinality ? ` · cardinality ${p.cardinality}` : ""}`
                     : p.status === "starvable"
@@ -1659,7 +1659,7 @@ function PreflightReport({ preflight }) {
       )}
 
       {preflight.trapPairs.length > 0 && (
-        <p style={{ fontSize: 11, color: "var(--brick)", margin: "10px 0 0", lineHeight: 1.5 }}>
+        <p style={{ fontSize: 12, color: "var(--brick)", margin: "10px 0 0", lineHeight: 1.5 }}>
           {preflight.trapPairs.length} pool{preflight.trapPairs.length === 1 ? " holds" : "s hold"} liquidity
           but cannot be quoted. A swap in would fill; the forced swap-back at settlement
           could not. The vault will refuse these at swap time — this is the guard working,
@@ -1708,7 +1708,7 @@ function Field({ label, children }) {
 }
 
 function Row2({ children }) {
-  return <div style={{ display: "flex", gap: 12 }}>{children}</div>;
+  return <div className="row2">{children}</div>;
 }
 
 function Row({ label, value }) {
@@ -1737,21 +1737,11 @@ const sectionLabelStyle = {
 
 const cardStyle = {
   background: "var(--panel)",
-  borderRadius: 10,
+  borderRadius: "var(--radius)",
   border: "1px solid var(--hairline)",
   padding: "18px 20px",
 };
 
-const inputStyle = {
-  width: "100%",
-  background: "var(--ink)",
-  border: "1px solid var(--hairline)",
-  borderRadius: 8,
-  padding: "9px 10px",
-  color: "var(--parch)",
-  fontSize: 13,
-  fontFamily: "IBM Plex Mono, monospace",
-};
 
 const errorTextStyle = {
   fontSize: 12,
@@ -1768,7 +1758,7 @@ const preflightBoxStyle = {
 };
 
 const preflightNoteStyle = {
-  fontSize: 11,
+  fontSize: 12,
   color: "var(--parch-dim)",
   lineHeight: 1.5,
 };
@@ -1777,7 +1767,7 @@ const acknowledgeStyle = {
   display: "flex",
   alignItems: "flex-start",
   gap: 8,
-  fontSize: 11,
+  fontSize: 12,
   color: "var(--parch-dim)",
   lineHeight: 1.5,
   marginBottom: 12,

@@ -1,4 +1,5 @@
 import { Link } from "react-router-dom";
+import { IconLock, IconCoins, IconShieldCheck, IconUmbrella, IconArrowRight } from "@tabler/icons-react";
 
 /**
  * Shown at "/" whenever the connected wallet has no ESTABLISHED role yet —
@@ -18,41 +19,97 @@ import { Link } from "react-router-dom";
  * not chosen — was right and is preserved. It had been implemented as "do not
  * link to either role", which is a different thing and left an unconnected
  * visitor with nowhere to go.
+ *
+ * October 2026 refresh: a hero with the two calls to action up front, four
+ * short tiles on what makes the product different, a three-step outline of a
+ * loan, then the role cards and the risk notice. The testnet notice moved to
+ * the bar at the top of every page (SiteChrome.TestnetBar), so it is no longer
+ * repeated here. The risk notice's wording is unchanged.
  */
 export function VisitorLanding() {
   return (
     <div>
-      <TestnetNotice />
-
-      <section style={{ marginBottom: 28 }}>
-        <h1
-          className="serif"
-          style={{ fontSize: 30, fontWeight: 500, color: "var(--parch)", margin: "0 0 12px", lineHeight: 1.25 }}
-        >
-          Borrow against a deposit worth less than the loan
+      <section className="hero">
+        <span className="eyebrow">Fixed-term lending · Robinhood Chain</span>
+        <h1>
+          Borrow against a deposit <em>worth less</em> than the loan
         </h1>
-        <p style={{ fontSize: 15, color: "var(--parch-dim)", margin: "0 0 12px", lineHeight: 1.65 }}>
+        <p className="lede">
           Covenza is a fixed-term lending protocol for tokenised assets. A borrower posts a deposit
           well below the principal rather than the 100–150% that over-collateralised lending
           demands. The principal never reaches their wallet: it sits in a vault that can only hold
           whitelisted assets, within limits fixed when the loan was written.
         </p>
-        <p style={{ fontSize: 15, color: "var(--parch-dim)", margin: 0, lineHeight: 1.65 }}>
-          It is <Em>low-collateral, not uncollateralised</Em>, and it is{" "}
-          <Em>non-liquidating</Em> — there are no margin calls and no forced closure mid-term.
-          That is the point of the product, and it is why the deposit floors, exposure caps and
-          term limits are as strict as they are. They do the job liquidation does elsewhere.
+        <p className="lede">
+          It is <strong>low-collateral, not uncollateralised</strong>, and it is{" "}
+          <strong>non-liquidating</strong> — there are no margin calls and no forced closure
+          mid-term.
         </p>
+        <div className="cta-row">
+          <Link to="/borrower" className="btn btn-primary btn-lg btn-auto">
+            Start borrowing <IconArrowRight size={17} aria-hidden="true" />
+          </Link>
+          <Link to="/lender" className="btn btn-lg btn-auto">
+            Start lending
+          </Link>
+          <Link to="/dashboard" className="btn btn-lg btn-auto" style={{ border: "none" }}>
+            View the dashboard
+          </Link>
+        </div>
       </section>
 
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16, marginBottom: 16 }}>
-        <ActionCard
+      <div className="feature-grid">
+        <Feature icon={IconLock} title="No liquidations">
+          Nothing is closed out mid-term. Deposit floors, exposure caps and term limits do the job
+          liquidation does elsewhere — which is why they are strict.
+        </Feature>
+        <Feature icon={IconCoins} title="Deposit below the loan">
+          The deposit is sized to the risk of the assets the borrower may hold and the length of
+          the loan, not to the full principal.
+        </Feature>
+        <Feature icon={IconShieldCheck} title="Principal stays in a vault">
+          The borrower directs the principal but never holds it. The vault can only hold whitelisted
+          assets, within limits agreed at the start.
+        </Feature>
+        <Feature icon={IconUmbrella} title="Insured, within stated limits">
+          After the borrower's deposit, a shared insurance pool covers lenders — up to caps shown
+          before any loan is agreed.
+        </Feature>
+      </div>
+
+      <h2 className="section-title">How a loan works</h2>
+      <div className="steps">
+        <div className="step">
+          <h3>A lender publishes terms</h3>
+          <p>
+            A rate that moves with the term and the deposit, a size per loan and a total capacity.
+            The capital stays in the lender's wallet until someone takes the terms.
+          </p>
+        </div>
+        <div className="step">
+          <h3>A verified borrower takes them</h3>
+          <p>
+            They choose size, term and deposit. The principal and deposit move into a new vault, and
+            the insurance premium into the pool, in one transaction — all of it or none of it.
+          </p>
+        </div>
+        <div className="step">
+          <h3>It settles at the deadline</h3>
+          <p>
+            Held assets are sold back close to their time-weighted average price. The lender is repaid
+            first; the deposit absorbs any loss, then the insurance pool; the borrower keeps the rest.
+          </p>
+        </div>
+      </div>
+
+      <div className="grid-2" style={{ marginBottom: 16 }}>
+        <RoleCard
           to="/lender"
           title="Lend"
           body="Publish terms a borrower can take without asking you first, or originate directly for a borrower you know. Your capital stays in your wallet until a loan is filled."
           note="Sanctions screening required"
         />
-        <ActionCard
+        <RoleCard
           to="/borrower"
           title="Borrow"
           body="Get an attestation from a recognised provider, then take any published mandate that suits you — no introduction needed."
@@ -61,56 +118,37 @@ export function VisitorLanding() {
       </div>
 
       <RiskNotice />
-
-      <Link
-        to="/dashboard"
-        style={{
-          display: "block",
-          marginTop: 16,
-          textAlign: "center",
-          fontSize: 13,
-          color: "var(--slate)",
-          textDecoration: "none",
-        }}
-      >
-        View protocol dashboard — no wallet required &rarr;
-      </Link>
     </div>
   );
 }
 
-const Em = ({ children }) => (
-  <span style={{ color: "var(--parch)", fontWeight: 600 }}>{children}</span>
-);
-
-/**
- * Every figure on this site is play money. Said once, at the top, rather than
- * relying on the reader inferring it from token names beginning with "t".
- */
-function TestnetNotice() {
+function Feature({ icon: Icon, title, children }) {
   return (
-    <div
-      style={{
-        border: "1px solid var(--hairline)",
-        borderLeft: "3px solid var(--brass)",
-        borderRadius: 8,
-        padding: "10px 14px",
-        marginBottom: 24,
-        background: "var(--panel)",
-      }}
-    >
-      <p style={{ fontSize: 12.5, color: "var(--parch-dim)", margin: 0, lineHeight: 1.6 }}>
-        <span style={{ color: "var(--brass)", fontWeight: 600 }}>Testnet.</span>{" "}
-        This runs on Robinhood Chain testnet. Every token here is a test token with no value, and
-        the protocol has not been independently audited. Nothing on this site involves real money.
-      </p>
+    <div className="feature">
+      <span className="feature-icon">
+        <Icon size={19} aria-hidden="true" />
+      </span>
+      <h3>{title}</h3>
+      <p>{children}</p>
     </div>
+  );
+}
+
+function RoleCard({ to, title, body, note }) {
+  return (
+    <Link to={to} className="card role-card">
+      <div className="role-card-head">
+        <h3>{title}</h3>
+        <IconArrowRight className="arrow" size={20} aria-hidden="true" />
+      </div>
+      <p>{body}</p>
+      <span className="pill">{note}</span>
+    </Link>
   );
 }
 
 /**
  * REG-4 requires that public materials disclose the risk of loss to BOTH sides.
- * Neither public page said anything about risk before this.
  *
  * Deliberately specific rather than a generic disclaimer: a lender's real
  * exposure is the insurance cap, and a borrower's is the whole deposit. Vague
@@ -118,22 +156,15 @@ function TestnetNotice() {
  */
 function RiskNotice() {
   return (
-    <div
-      style={{
-        border: "1px solid var(--hairline)",
-        borderRadius: 10,
-        padding: "16px 18px",
-        background: "var(--panel)",
-      }}
-    >
-      <p style={{ fontSize: 13, fontWeight: 600, color: "var(--parch)", margin: "0 0 8px" }}>
+    <div className="card" style={{ borderLeft: "3px solid var(--brick)" }}>
+      <p style={{ fontSize: 14, fontWeight: 600, color: "var(--parch)", margin: "0 0 10px" }}>
         Both sides can lose money
       </p>
-      <p style={{ fontSize: 12.5, color: "var(--parch-dim)", margin: "0 0 6px", lineHeight: 1.6 }}>
+      <p className="note" style={{ fontSize: 13, margin: "0 0 8px" }}>
         <Em>Borrowers</Em> put their deposit at risk. It absorbs the loss on the position first,
         and it can be lost entirely.
       </p>
-      <p style={{ fontSize: 12.5, color: "var(--parch-dim)", margin: 0, lineHeight: 1.6 }}>
+      <p className="note" style={{ fontSize: 13, margin: 0 }}>
         <Em>Lenders</Em> are protected by the borrower's deposit and then by a shared insurance
         pool — but the pool pays at most a capped share of the loan's principal, and of its own
         reserve, per loan, and a loss beyond that is the lender's. Both caps are shown before you
@@ -143,25 +174,6 @@ function RiskNotice() {
   );
 }
 
-function ActionCard({ to, title, body, note }) {
-  return (
-    <Link
-      to={to}
-      style={{
-        display: "block",
-        background: "var(--panel)",
-        border: "0.5px solid var(--hairline)",
-        borderRadius: 10,
-        padding: 20,
-        textDecoration: "none",
-      }}
-    >
-      <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", marginBottom: 8 }}>
-        <span style={{ fontSize: 15, fontWeight: 600, color: "var(--parch)" }}>{title}</span>
-        <span style={{ fontSize: 15, color: "var(--brass)" }}>&rarr;</span>
-      </div>
-      <div style={{ fontSize: 13, color: "var(--parch-dim)", lineHeight: 1.5, marginBottom: 10 }}>{body}</div>
-      <div style={{ fontSize: 11, color: "var(--slate)" }}>{note}</div>
-    </Link>
-  );
-}
+const Em = ({ children }) => (
+  <span style={{ color: "var(--parch)", fontWeight: 600 }}>{children}</span>
+);

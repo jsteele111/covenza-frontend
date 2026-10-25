@@ -1,10 +1,9 @@
 import { useEffect } from "react";
 import { BrowserRouter, Routes, Route, Navigate, Link, useLocation, useNavigate } from "react-router-dom";
 import { useAccount } from "wagmi";
-import { ConnectButton } from "@rainbow-me/rainbowkit";
 import { useWalletRole } from "./hooks/useWalletRole.js";
 import { VisitorLanding } from "./components/VisitorLanding.jsx";
-import { RoleSwitcher } from "./components/RoleSwitcher.jsx";
+import { TestnetBar, SiteHeader, SiteFooter } from "./components/SiteChrome.jsx";
 import { RouteErrorBoundary } from "./components/RouteErrorBoundary.jsx";
 import { PublicDashboard } from "./components/PublicDashboard.jsx";
 // Existing v1 view components — kept functional here as-is. Each is
@@ -48,44 +47,21 @@ function Shell() {
     if (primary) navigate(`/${primary}`, { replace: true });
   }, [isLoading, hasEstablishedRole, roles, location.pathname, navigate]);
 
-  const isWide = hasAnyRole || location.pathname === "/dashboard";
+  // The role views and the dashboard carry wide tables and two-column
+  // layouts; the connect prompts read better at a narrower measure.
+  const isWide =
+    hasAnyRole || location.pathname === "/dashboard" || location.pathname === "/" ||
+    location.pathname === "/operator";
 
   return (
-    <div style={{ minHeight: "100%", display: "flex", justifyContent: "center", padding: "0 16px" }}>
-      <div style={{ width: "100%", maxWidth: isWide ? 1100 : 720 }}>
-        <header
-          style={{
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "space-between",
-            padding: "20px 0",
-            borderBottom: "1px solid var(--hairline)",
-          }}
-        >
-          <div style={{ display: "flex", alignItems: "center", gap: 18 }}>
-            <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-              <span style={{ color: "var(--brass)", fontSize: 16 }}>&#9670;</span>
-              <span className="serif" style={{ fontSize: 18, fontWeight: 500, letterSpacing: "0.06em" }}>
-                Covenza
-              </span>
-            </div>
-            <Link
-              to="/dashboard"
-              style={{
-                fontSize: 13,
-                color: location.pathname === "/dashboard" ? "var(--parch)" : "var(--parch-dim)",
-                textDecoration: "none",
-              }}
-            >
-              Dashboard
-            </Link>
-          </div>
-          <ConnectButton showBalance={false} chainStatus="icon" />
-        </header>
+    <>
+      <TestnetBar />
+      {/* The header's nav replaces the old role-switcher row: Lend and Borrow
+          are always listed, Operator only for the wallet holding the role. */}
+      <SiteHeader roles={isConnected && !isLoading ? roles : []} />
 
-        <main style={{ paddingTop: 20, paddingBottom: 40 }}>
+        <main className={`page${isWide ? "" : " narrow"}`}>
           <DeploymentHealthBanner />
-          {isConnected && !isLoading && <RoleSwitcher roles={roles} />}
 
           <Routes>
             <Route path="/" element={<VisitorLanding />} />
@@ -144,8 +120,9 @@ function Shell() {
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>
         </main>
-      </div>
-    </div>
+
+      <SiteFooter />
+    </>
   );
 }
 
@@ -169,12 +146,10 @@ function DeploymentHealthBanner() {
   if (status !== "wiped") return null;
 
   return (
-    <div style={{
-      border: "1px solid var(--brick)",
-      borderRadius: 10,
-      padding: "14px 16px",
+    <div className="card" style={{
+      borderColor: "var(--brick)",
       marginBottom: 16,
-      background: "rgba(160,60,50,0.08)",
+      background: "rgba(207,107,93,0.08)",
     }}>
       <p style={{ fontSize: 13, fontWeight: 600, color: "var(--brick)", margin: "0 0 6px" }}>
         This deployment is gone
@@ -186,7 +161,7 @@ function DeploymentHealthBanner() {
         notice exists at all. Redeploy and update <span className="mono">contracts.js</span>.
       </p>
       {missing.map((m) => (
-        <p key={m.address} className="mono" style={{ fontSize: 11, color: "var(--parch-dim)", margin: "2px 0" }}>
+        <p key={m.address} className="mono" style={{ fontSize: 12, color: "var(--parch-dim)", margin: "2px 0" }}>
           {m.label}: {m.address}
         </p>
       ))}
@@ -210,14 +185,7 @@ function GuardedRoute({ allowed, isLoading, reason, children }) {
   // it dropped you somewhere offering no way forward.
   if (!allowed) {
     return (
-      <div
-        style={{
-          border: "1px solid var(--hairline)",
-          borderRadius: 10,
-          padding: "22px 24px",
-          background: "var(--panel)",
-        }}
-      >
+      <div className="card" style={{ padding: "26px 28px" }}>
         <p style={{ fontSize: 15, fontWeight: 600, color: "var(--parch)", margin: "0 0 8px" }}>
           Connect a wallet to continue
         </p>

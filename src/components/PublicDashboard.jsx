@@ -72,7 +72,7 @@ export function PublicDashboard() {
 
       <div>
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10 }}>
-          <p style={{ fontSize: 11, color: "var(--parch-dim)", margin: 0 }}>
+          <p style={{ fontSize: 12, color: "var(--parch-dim)", margin: 0 }}>
             Minimum deposit required for
           </p>
           <DurationSwitcher value={durationDays} onChange={setDurationDays} />
@@ -99,7 +99,7 @@ export function PublicDashboard() {
       {/* Every figure above is read live from the registry and the pool. The
           footnote this replaced cited a bundled model dated 23 July whose
           asset cohort was never deployed on this chain. */}
-      <p style={{ fontSize: 11, color: "var(--parch-dim)", margin: 0, lineHeight: 1.6 }}>
+      <p style={{ fontSize: 12, color: "var(--parch-dim)", margin: 0, lineHeight: 1.6 }}>
         All figures read live from the asset registry and insurance pool. Deposit floors are
         computed on chain from each tier's assumed volatility and the square root of term, and are
         enforced at origination.
@@ -166,7 +166,7 @@ function AssetCard({ asset, durationDays }) {
           label={`Minimum deposit at ${durationDays}d`}
           value={floorBps === undefined ? "—" : `${(Number(floorBps) / 100).toFixed(1)}%`}
         />
-        <p style={{ fontSize: 10.5, color: "var(--slate)", margin: "8px 0 0", lineHeight: 1.5 }}>
+        <p style={{ fontSize: 12, color: "var(--slate)", margin: "8px 0 0", lineHeight: 1.5 }}>
           Enforced at origination, not advisory. Rises with the square root of term.
         </p>
       </div>
@@ -198,13 +198,13 @@ function ProtocolConfigStrip({ config, isLoading }) {
 
   return (
     <div style={cardStyle}>
-      <p style={{ fontSize: 11, color: "var(--parch-dim)", margin: "0 0 12px" }}>
+      <p style={{ fontSize: 12, color: "var(--parch-dim)", margin: "0 0 12px" }}>
         Protocol-wide settlement configuration
       </p>
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(180px, 1fr))", gap: 10 }}>
         {items.map((item) => (
           <div key={item.label}>
-            <p style={{ fontSize: 10, color: "var(--parch-dim)", margin: "0 0 2px" }}>{item.label}</p>
+            <p style={{ fontSize: 12, color: "var(--parch-dim)", margin: "0 0 2px" }}>{item.label}</p>
             <p className="mono" style={{ fontSize: 14, color: "var(--parch)", margin: 0 }}>{item.value}</p>
           </div>
         ))}
@@ -269,7 +269,7 @@ function EmptyState({ title, message }) {
 
 const cardStyle = {
   background: "var(--panel)",
-  borderRadius: 10,
+  borderRadius: "var(--radius)",
   border: "1px solid var(--hairline)",
   padding: "18px 20px",
 };

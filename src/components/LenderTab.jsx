@@ -429,7 +429,7 @@ export function LenderTab() {
         />
       ) : (
       <div style={cardStyle}>
-        <p style={{ fontSize: 11, color: "var(--parch-dim)", margin: "0 0 16px" }}>
+        <p style={{ fontSize: 12, color: "var(--parch-dim)", margin: "0 0 16px" }}>
           Originate a vault for a borrower you already know. Terms are fixed here rather
           than priced off a surface, and the borrower cannot take them without your
           transaction.
@@ -440,13 +440,13 @@ export function LenderTab() {
             value={borrower}
             onChange={(e) => setBorrower(e.target.value)}
             placeholder="0x..."
-            style={inputStyle}
+            className="input"
           />
         </Field>
         {borrowerIsValidAddress && (
           <p style={{
-            fontSize: 11,
-            color: borrowerIsSelf || borrowerElig.eligible === false ? "var(--brick)" : borrowerElig.eligible ? "var(--brass)" : "var(--parch-dim)",
+            fontSize: 12,
+            color: borrowerIsSelf || borrowerElig.eligible === false ? "var(--brick)" : borrowerElig.eligible ? "var(--sage)" : "var(--parch-dim)",
             margin: "-8px 0 12px",
           }}>
             {borrowerIsSelf
@@ -461,15 +461,15 @@ export function LenderTab() {
 
         <Row2>
           <Field label={`Principal (${selectedSymbol || "—"})`}>
-            <input value={principal} onChange={(e) => setPrincipal(e.target.value)} style={inputStyle} placeholder="0.0" />
+            <input value={principal} onChange={(e) => setPrincipal(e.target.value)} className="input" placeholder="0.0" />
           </Field>
           <Field label={`Deposit required (${selectedSymbol || "—"})`}>
-            <input value={depositRequired} onChange={(e) => setDepositRequired(e.target.value)} style={inputStyle} placeholder="0.0" />
+            <input value={depositRequired} onChange={(e) => setDepositRequired(e.target.value)} className="input" placeholder="0.0" />
           </Field>
         </Row2>
 
         {depositHint && (
-          <p style={{ fontSize: 11, color: "var(--parch-dim)", margin: "-8px 0 12px" }}>
+          <p style={{ fontSize: 12, color: "var(--parch-dim)", margin: "-8px 0 12px" }}>
             Deposit model recommends {formatPercent(depositHint.pct95)} (95%) / {formatPercent(depositHint.pct99)} (99%)
             of principal for {durationDays}d in {selectedSymbol}.{" "}
             {parsedPrincipal !== undefined && (
@@ -487,10 +487,10 @@ export function LenderTab() {
 
         <Row2>
           <Field label="Interest rate (% per year)">
-            <input value={feeRatePercent} onChange={(e) => setFeeRatePercent(e.target.value)} style={inputStyle} />
+            <input value={feeRatePercent} onChange={(e) => setFeeRatePercent(e.target.value)} className="input" />
           </Field>
           <Field label={shortMode ? "Duration (seconds)" : "Duration (days)"}>
-            <input value={durationValue} onChange={(e) => setDurationValue(e.target.value)} style={inputStyle} />
+            <input value={durationValue} onChange={(e) => setDurationValue(e.target.value)} className="input" />
           </Field>
         </Row2>
 
@@ -523,7 +523,7 @@ export function LenderTab() {
             by a factor of six — no interest rate does that. */}
         {minDeposit !== undefined && minDeposit > 0n && (
           <p style={{
-            fontSize: 11,
+            fontSize: 12,
             color: depositBelowFloor ? "var(--brick)" : "var(--parch-dim)",
             margin: "-4px 0 12px",
             lineHeight: 1.5,
@@ -541,7 +541,7 @@ export function LenderTab() {
           </p>
         )}
 
-        <p style={{ fontSize: 11, color: "var(--parch-dim)", margin: "-8px 0 12px" }}>
+        <p style={{ fontSize: 12, color: "var(--parch-dim)", margin: "-8px 0 12px" }}>
           The rate is <strong>annual</strong>, and interest accrues on time actually
           elapsed — a borrower who closes early owes less.
           {fullTermFee !== undefined && fullTermFee > 0n && (
@@ -565,7 +565,7 @@ export function LenderTab() {
             reading "insurance pool" reasonably assumes it covers the loss;
             beyond this fraction of principal, it does not. */}
         {drawCapBps != null && (
-          <p style={{ fontSize: 11, color: "var(--parch-dim)", margin: "-4px 0 12px", lineHeight: 1.5 }}>
+          <p style={{ fontSize: 12, color: "var(--parch-dim)", margin: "-4px 0 12px", lineHeight: 1.5 }}>
             <strong>What the pool covers.</strong> After the borrower's deposit is
             exhausted, the pool pays the lesser of{" "}
             <strong>{Number(drawCapBps) / 100}% of principal</strong>
@@ -590,7 +590,7 @@ export function LenderTab() {
             than in a comment. */}
         {fullTermFee !== undefined && parsedPrincipal !== undefined && parsedPrincipal > 0n &&
          fullTermFee * 200n < parsedPrincipal && (
-          <p style={{ fontSize: 11, color: "var(--brick)", margin: "-8px 0 12px", lineHeight: 1.5 }}>
+          <p style={{ fontSize: 12, color: "var(--brick)", margin: "-8px 0 12px", lineHeight: 1.5 }}>
             Short term relative to the rate: total interest is under 0.5% of principal, so it
             absorbs very little loss before the borrower's deposit is drawn on. Consider a larger
             deposit for loans this brief.
@@ -598,7 +598,7 @@ export function LenderTab() {
         )}
 
         {protocolFee !== undefined && protocolFee > 0n && (
-          <p style={{ fontSize: 11, color: "var(--parch-dim)", margin: "-8px 0 12px" }}>
+          <p style={{ fontSize: 12, color: "var(--parch-dim)", margin: "-8px 0 12px" }}>
             The borrower additionally pays a {formatTokenAmount(protocolFee, decimals)} {selectedSymbol} protocol
             fee at settlement, on top of your fee — your return is unaffected by it. It is taken only from
             the borrower's residual once you have been paid in full, so a loss yields no protocol fee at all.
@@ -651,14 +651,14 @@ export function LenderTab() {
 
       {latestVaultAddress && (
         <div style={{ marginTop: 20 }}>
-          <p style={{ fontSize: 11, color: "var(--parch-dim)", margin: "0 0 10px" }}>Your most recent vault</p>
+          <p style={{ fontSize: 12, color: "var(--parch-dim)", margin: "0 0 10px" }}>Your most recent vault</p>
           <LenderVaultCard vaultAddress={latestVaultAddress} />
         </div>
       )}
 
       {otherVaults.length > 0 && (
         <div style={{ marginTop: 20 }}>
-          <p style={{ fontSize: 11, color: "var(--parch-dim)", margin: "0 0 10px" }}>
+          <p style={{ fontSize: 12, color: "var(--parch-dim)", margin: "0 0 10px" }}>
             Earlier vaults ({otherVaults.length})
           </p>
           <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
@@ -686,7 +686,7 @@ function LenderBook({ vaults }) {
 
   return (
     <div style={{ marginTop: 20 }}>
-      <p style={{ fontSize: 11, color: "var(--parch-dim)", margin: "0 0 10px" }}>Your book</p>
+      <p style={{ fontSize: 12, color: "var(--parch-dim)", margin: "0 0 10px" }}>Your book</p>
       <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
         {book.map((row) => (
           <div key={row.symbol} style={cardStyle}>
@@ -721,7 +721,7 @@ function LenderBook({ vaults }) {
             />
 
             {row.inKindCount > 0 && (
-              <p style={{ fontSize: 11, color: "var(--parch-dim)", margin: "8px 0 0", lineHeight: 1.5 }}>
+              <p style={{ fontSize: 12, color: "var(--parch-dim)", margin: "8px 0 0", lineHeight: 1.5 }}>
                 {row.inKindCount} loan{row.inKindCount > 1 ? "s were" : " was"} settled in kind and{" "}
                 {row.inKindCount > 1 ? "are" : "is"} not counted above: you received assets the vault could
                 not sell, which the cash figures do not measure.
@@ -729,7 +729,7 @@ function LenderBook({ vaults }) {
             )}
 
             {row.shortfall === 0n && row.settledCount > row.inKindCount && (
-              <p style={{ fontSize: 11, color: "var(--parch-dim)", margin: "8px 0 0", lineHeight: 1.5 }}>
+              <p style={{ fontSize: 12, color: "var(--parch-dim)", margin: "8px 0 0", lineHeight: 1.5 }}>
                 Every closed loan returned your principal and interest in full — losses were
                 absorbed by borrower deposits before reaching you.
               </p>
@@ -747,7 +747,7 @@ function BookRow({ label, value, emphasis, alert }) {
       <span style={{ fontSize: 12, color: "var(--parch-dim)" }}>{label}</span>
       <span className="mono" style={{
         fontSize: 12,
-        color: alert ? "var(--brick)" : emphasis ? "var(--brass)" : "var(--parch)",
+        color: alert ? "var(--brick)" : emphasis ? "var(--sage)" : "var(--parch)",
         fontWeight: emphasis || alert ? 600 : 400,
       }}>{value}</span>
     </div>
@@ -807,7 +807,7 @@ function Field({ label, children }) {
 }
 
 function Row2({ children }) {
-  return <div style={{ display: "flex", gap: 12 }}>{children}</div>;
+  return <div className="row2">{children}</div>;
 }
 
 function EmptyState({ message }) {
@@ -820,28 +820,18 @@ function EmptyState({ message }) {
 
 const cardStyle = {
   background: "var(--panel)",
-  borderRadius: 10,
+  borderRadius: "var(--radius)",
   border: "1px solid var(--hairline)",
   padding: "18px 20px",
 };
 
-const inputStyle = {
-  width: "100%",
-  background: "var(--ink)",
-  border: "1px solid var(--hairline)",
-  borderRadius: 8,
-  padding: "9px 10px",
-  color: "var(--parch)",
-  fontSize: 13,
-  fontFamily: "IBM Plex Mono, monospace",
-};
 
 const linkButtonStyle = {
   background: "none",
   border: "none",
   padding: 0,
   color: "var(--slate)",
-  fontSize: 11,
+  fontSize: 12,
   cursor: "pointer",
   textDecoration: "underline",
 };
