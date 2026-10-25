@@ -1,6 +1,6 @@
 import { useChainId, useReadContract } from "wagmi";
 import { VAULT_FACTORY_ABI } from "../config/abis.js";
-import { getContractsForChain } from "../config/contracts.js";
+import { getContractsForChain, isPlaceholder } from "../config/contracts.js";
 
 // abis.js already exports pre-parsed ABIs — do not re-wrap in parseAbi().
 const factoryAbi = VAULT_FACTORY_ABI;
@@ -19,7 +19,7 @@ export function useLatestVault(address, role) {
     functionName,
     args: [address],
     query: {
-      enabled: Boolean(address),
+      enabled: Boolean(address) && !isPlaceholder(contracts.vaultFactory),
       refetchInterval: 10000,
     },
   });

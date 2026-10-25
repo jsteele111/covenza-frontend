@@ -28,7 +28,7 @@ export function PublicDashboard() {
     return (
       <EmptyState
         title="Dashboard not yet live"
-        message="The v2 protocol contracts (asset registry, insurance pool, vault factory) haven't been deployed on this network yet. This view will populate automatically once Group F's deployment fills in real addresses."
+        message="The protocol contracts (asset registry, insurance pool, vault factory) haven't been deployed on this network yet. This view will populate automatically once their addresses are filled in after a deploy."
       />
     );
   }
@@ -191,7 +191,8 @@ function ProtocolConfigStrip({ config, isLoading }) {
     { label: "Swap-back grace period", value: config.swapBackGracePeriod != null ? `${Number(config.swapBackGracePeriod) / 3600}h` : "—" },
     { label: "Keeper bounty rate", value: config.bountyRatePerHourBps != null ? `${formatPercent(Number(config.bountyRatePerHourBps) / 10000)}/hr` : "—" },
     { label: "Keeper bounty cap", value: config.bountyCapBps != null ? formatPercent(Number(config.bountyCapBps) / 10000) : "—" },
-    { label: "Insurance draw cap", value: config.drawCapBps != null ? formatPercent(Number(config.drawCapBps) / 10000) : "—" },
+    { label: "Insurance draw cap (of principal)", value: config.drawCapBps != null ? formatPercent(Number(config.drawCapBps) / 10000) : "—" },
+    { label: "Insurance draw cap (of reserve)", value: config.maxDrawShareBps != null ? formatPercent(Number(config.maxDrawShareBps) / 10000) : "—" },
     { label: "Insurance skim rate", value: config.insuranceSkimRateBps != null ? formatPercent(Number(config.insuranceSkimRateBps) / 10000) : "—" },
   ];
 

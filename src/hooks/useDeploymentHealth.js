@@ -30,6 +30,7 @@ export function useDeploymentHealth() {
     ["asset registry", contracts.assetRegistry],
     ["insurance pool", contracts.insurancePool],
     ["vault factory", contracts.vaultFactory],
+    ["vault lens", contracts.vaultLens],
   ];
 
   const key = targets.map(([, a]) => a).join("|") + `@${chainId}`;

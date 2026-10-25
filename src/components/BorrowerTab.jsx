@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { useAccount, useChainId, useReadContract, useReadContracts, useWriteContract, useWaitForTransactionReceipt, usePublicClient } from "wagmi";
 import { parseUnits, formatUnits } from "viem";
-import { KYC_REGISTRY_ABI, ERC20_ABI, ASSET_REGISTRY_ABI, VAULT_ABI } from "../config/abis.js";
+import { ERC20_ABI, ASSET_REGISTRY_ABI, VAULT_LENS_ABI } from "../config/abis.js";
 import { getContractsForChain, isPlaceholder, symbolForToken } from "../config/contracts.js";
 import { useLatestVault } from "../hooks/useLatestVault.js";
 import { useVaultSelection } from "../hooks/useVaultSelection.js";
@@ -9,23 +9,20 @@ import { useSwapPreflight } from "../hooks/useSwapPreflight.js";
 import { useVaultData } from "../hooks/useVaultData.js";
 import { useVaultAction } from "../hooks/useVaultAction.js";
 import { useHeldAssets } from "../hooks/useHeldAssets.js";
+import { useEligibility } from "../hooks/useEligibility.js";
+import { useAttesters } from "../hooks/useAttesters.js";
 import { VaultStatement } from "./VaultStatement.jsx";
+import { VaultActions } from "./VaultActions.jsx";
 import { MandateBoard } from "./MandateBoard.jsx";
 import { ActionButton } from "./ActionButton.jsx";
 import { KycGate } from "./KycGate.jsx";
 import { formatTokenAmount } from "../utils/format.js";
 
 // abis.js already exports pre-parsed ABIs — do not re-wrap in parseAbi().
-const kycAbi = KYC_REGISTRY_ABI;
 const erc20Abi = ERC20_ABI;
 const assetRegistryAbi = ASSET_REGISTRY_ABI;
-const vaultAbi = VAULT_ABI;
 
-const FEE_TIERS = [
-  { label: "0.05%", value: 500 },
-  { label: "0.3%", value: 3000 },
-  { label: "1%", value: 10000 },
-];
+const FEE_LABELS = { 100: "0.01%", 500: "0.05%", 3000: "0.3%", 10000: "1%" };
 
 function tryParseUnits(value, decimals) {
   if (!value || decimals === undefined || decimals === null) return undefined;
@@ -38,29 +35,30 @@ function tryParseUnits(value, decimals) {
 }
 
 /**
- * Group E5 rewrite. v1 had one hardcoded whitelisted action (Aave, ETH
- * only) and a payable payDeposit(). v2 adds directional swaps as a second
- * whitelisted action and makes every borrower action ERC20-native:
+ * The borrower's view: eligibility, the mandate board, and one vault at a time.
  *
- *   - payDeposit() is now non-payable — the borrower must approve() the
- *     vault for the deposit amount first (the bug flagged at the end of
- *     Group E4 review; fixed here with the same approve-then-act pattern
- *     LenderTab uses for origination).
- *   - supplyToAave/withdrawFromAave take an explicit amount rather than
- *     the UI computing one "invest everything" figure — v2 replaced the
- *     v1 investedAmount cap with a live invariant (vaultBalance - deposit,
- *     see useVaultData.js), so the amount to move is always the
- *     borrower's own choice, bounded by that invariant on-chain regardless
- *     of what the UI allows them to type.
- *   - swap()/swapBack() are new: a borrower can take directional exposure
- *     to any other whitelisted asset, and unwind it manually before
- *     maturity (unwinding also happens automatically at settlement if
- *     they don't). minAmountOut is borrower-supplied slippage protection,
- *     enforced on-chain. Vault.quoteSwapOut() now provides the TWAP-implied
- *     output and the vault's own acceptance floor, so the form offers a real
- *     reference instead of asking for a number with nothing to set it against
- *     — which in practice meant guessing, or entering a value low enough to be
- *     no protection at all.
+ * October 2026 — brought up to the contracts frozen for audit:
+ *
+ *   - Eligibility, not "verified". The factory checks isEligible(wallet,
+ *     requiredBorrowerClaims) at every origination, and an attestation now
+ *     expires and carries claims. A wallet admitted once can lapse; the gate
+ *     reads the same question the factory asks.
+ *   - No yield venue. Removed from the contracts before the audit (E-1).
+ *   - The protocol names the pool. A swap must go through the pool the
+ *     registry approved for the pair (KRAIT-003, item 20), and an open
+ *     position keeps the pool it was bought through. The fee-tier picker is
+ *     gone: it could only ever offer one tier the vault would accept.
+ *   - The TWAP quote comes from VaultLens, which took over quoteSwapOut when
+ *     the vault ran short of bytecode room.
+ *   - Swap-back is bounded by what the vault RECORDED buying (heldAmount),
+ *     not by its token balance, and is never filled below the TWAP less the
+ *     tolerance whatever minimum is entered (KRAIT-001).
+ *   - Settlement, in-kind settlement, cancellation and claims are in
+ *     VaultActions, shared with the lender view.
+ *
+ *   minAmountOut on a swap is still the borrower's own slippage protection,
+ *   enforced on-chain; the lens provides the TWAP reference and the vault's own
+ *   acceptance floor so it is not a guess.
  */
 export function BorrowerTab() {
   const { address, isConnected } = useAccount();
@@ -68,13 +66,7 @@ export function BorrowerTab() {
   const contracts = getContractsForChain(chainId);
   const publicClient = usePublicClient();
 
-  const { data: isVerified, error: kycError } = useReadContract({
-    address: contracts.kycRegistry,
-    abi: kycAbi,
-    functionName: "isVerified",
-    args: [address],
-    query: { enabled: Boolean(address), refetchInterval: 8000 },
-  });
+  const elig = useEligibility(address, "borrower");
 
   const { allVaults, refetch: refetchVaultList } = useLatestVault(address, "borrower");
   const {
@@ -94,7 +86,8 @@ export function BorrowerTab() {
   // --- Deposit: approve (raw ERC20 write) then payDeposit (vault write) ---
   const [depositApproving, setDepositApproving] = useState(false);
   const { writeContract: writeApprove, data: approveHash, isPending: approvePending, error: approveError, reset: resetApprove } = useWriteContract();
-  const { isLoading: approveConfirming, isSuccess: approveSuccess } = useWaitForTransactionReceipt({ hash: approveHash });
+  const { isLoading: approveConfirming, data: approveReceipt } = useWaitForTransactionReceipt({ hash: approveHash });
+  const approveSuccess = approveReceipt?.status === "success";
 
   const { data: depositAllowance, refetch: refetchDepositAllowance } = useReadContract({
     address: vault?.asset,
@@ -121,27 +114,10 @@ export function BorrowerTab() {
     }
   }, [depositAction.isSuccess]);
 
-  // --- Aave supply / withdraw ---
-  const [supplyAmount, setSupplyAmount] = useState("");
-  const [withdrawAmount, setWithdrawAmount] = useState("");
-  const [aavePending, setAavePending] = useState(null); // "supply" | "withdraw" | null
-  const aaveAction = useVaultAction();
-
-  useEffect(() => {
-    if (aaveAction.isSuccess) {
-      refetchVaultData();
-      setSupplyAmount("");
-      setWithdrawAmount("");
-      setAavePending(null);
-      aaveAction.reset();
-    }
-  }, [aaveAction.isSuccess]);
-
   // --- Directional swap ---
   const [swapAsset, setSwapAsset] = useState("");
   const [swapAmountIn, setSwapAmountIn] = useState("");
   const [swapMinOut, setSwapMinOut] = useState("");
-  const [swapFeeTier, setSwapFeeTier] = useState(3000);
   const swapAction = useVaultAction();
 
   const { data: whitelistedAssets } = useReadContract({
@@ -155,26 +131,56 @@ export function BorrowerTab() {
     (a) => vault && a.toLowerCase() !== vault.asset.toLowerCase()
   );
 
-  // Which of those the vault's risk ceiling forbids. Known from the asset and
-  // the vault alone, so it can be shown the moment the selector renders rather
-  // than after the borrower has filled in an amount and a minimum output.
-  const { data: targetTierResults } = useReadContracts({
-    contracts: swapTargets.map((a) => ({
-      address: contracts.assetRegistry,
-      abi: assetRegistryAbi,
-      functionName: "tierOf",
-      args: [a],
-    })),
-    query: { enabled: swapTargets.length > 0 && !isPlaceholder(contracts.assetRegistry) },
+  // Per destination: the riskiest tier it has held since this loan began, and
+  // the pool the registry approves for it against the loan asset. Both are
+  // known from the asset and the vault alone, so a destination that can never
+  // be used is marked the moment the selector renders.
+  //
+  // The tier read is highestTierSince, not tierOf, because that is what the
+  // vault checks: re-tagging an asset safer must not admit it to a loan whose
+  // lender agreed a ceiling against its old tier.
+  const PER_TARGET = 2;
+  const { data: targetResults } = useReadContracts({
+    contracts: swapTargets.flatMap((a) => [
+      {
+        address: contracts.assetRegistry,
+        abi: assetRegistryAbi,
+        functionName: "highestTierSince",
+        args: [a, BigInt(vault?.originatedAt ?? 0)],
+      },
+      {
+        address: contracts.assetRegistry,
+        abi: assetRegistryAbi,
+        functionName: "poolFeeTier",
+        args: [a, vault?.asset],
+      },
+    ]),
+    query: {
+      enabled: swapTargets.length > 0 && !isPlaceholder(contracts.assetRegistry) && vault?.originatedAt !== undefined,
+    },
   });
 
-  const unavailableTargets = new Set(
-    swapTargets
-      .filter((_, i) => {
-        const tier = targetTierResults?.[i]?.result;
-        return tier !== undefined && vault?.maxTier !== undefined && Number(tier) > Number(vault.maxTier);
-      })
-      .map((a) => a.toLowerCase())
+  const heldByAddress = new Map(heldAssets.map((h) => [h.address.toLowerCase(), h]));
+
+  const targetInfo = new Map(
+    swapTargets.map((a, i) => {
+      const tier = targetResults?.[i * PER_TARGET]?.result;
+      const registryFee = targetResults?.[i * PER_TARGET + 1]?.result;
+      // An open position keeps the pool it was bought through.
+      const held = heldByAddress.get(a.toLowerCase());
+      const fee = held?.feeTier ?? (registryFee != null ? Number(registryFee) : undefined);
+      let reason = null;
+      if (tier !== undefined && vault?.maxTier !== undefined && Number(tier) > Number(vault.maxTier)) {
+        reason = "tier";
+      } else if (fee === 0) {
+        reason = "pool";
+      }
+      return [a.toLowerCase(), { fee, reason }];
+    })
+  );
+
+  const unavailableTargets = new Map(
+    [...targetInfo.entries()].filter(([, v]) => v.reason).map(([k, v]) => [k, v.reason])
   );
 
   // Never leave a forbidden asset selected — it would be the one destination
@@ -184,17 +190,17 @@ export function BorrowerTab() {
       const firstAllowed = swapTargets.find((a) => !unavailableTargets.has(a.toLowerCase()));
       setSwapAsset(firstAllowed || "");
     }
-  }, [swapAsset, targetTierResults]);
+  }, [swapAsset, targetResults]);
 
-  // A price to set the minimum output against.
-  //
-  // The form has always asked for one and enforced it on chain, while telling
-  // the borrower plainly that no quote was wired in. Candid, but it left them
-  // guessing — and the safe-looking guess is a number low enough to provide no
-  // protection, which defeats the control entirely.
+  const swapTargetsKey = swapTargets.join("|");
   useEffect(() => {
-    if (!swapAsset && swapTargets.length > 0) setSwapAsset(swapTargets[0]);
-  }, [swapTargets, swapAsset]);
+    if (!swapAsset && swapTargets.length > 0) {
+      const firstAllowed = swapTargets.find((a) => !unavailableTargets.has(a.toLowerCase()));
+      if (firstAllowed) setSwapAsset(firstAllowed);
+    }
+  }, [swapTargetsKey, swapAsset, targetResults]);
+
+  const swapFee = swapAsset ? targetInfo.get(swapAsset.toLowerCase())?.fee : undefined;
 
   const { data: swapAssetDecimals } = useReadContract({
     address: swapAsset,
@@ -213,88 +219,82 @@ export function BorrowerTab() {
     }
   }, [swapAction.isSuccess]);
 
-  // --- Settle ---
-  const settleAction = useVaultAction();
-
-  useEffect(() => {
-    if (settleAction.isSuccess) {
-      refetchVaultData();
-      refetchVaultList();
-      settleAction.reset();
-    }
-  }, [settleAction.isSuccess]);
-
-  // --- Swap pre-flight ---
+  // --- Swap quote and pre-flight ---
   //
   // Declared HERE, above the early returns, because hooks may not be
   // conditional and several of those returns fire before a vault exists.
-  // Everything it needs is read defensively for the same reason; the hook
-  // itself no-ops unless `enabled`.
   const parsedSwapIn = tryParseUnits(swapAmountIn, vault?.decimals);
 
   const { data: swapQuote } = useReadContract({
-    address: latestVaultAddress,
-    abi: vaultAbi,
+    address: contracts.vaultLens,
+    abi: VAULT_LENS_ABI,
     functionName: "quoteSwapOut",
-    args: [swapAsset, parsedSwapIn ?? 0n, swapFeeTier],
-    query: { enabled: Boolean(latestVaultAddress && swapAsset && parsedSwapIn) },
+    args: [latestVaultAddress, swapAsset, parsedSwapIn ?? 0n, swapFee ?? 0],
+    query: {
+      enabled:
+        !isPlaceholder(contracts.vaultLens) &&
+        Boolean(latestVaultAddress && swapAsset && parsedSwapIn && swapFee),
+    },
   });
 
   const quoteOk = swapQuote?.[0] === true;
   const twapOut = swapQuote?.[1];
   const floorOut = swapQuote?.[2];
 
-  // Clear the minimum when the trade it was quoted for changes.
-  //
-  // A figure taken for a 10 tUSDG swap stayed in the field when the amount
-  // dropped to 1, so the form reported a refusal that was an artefact of the
-  // stale number rather than anything about the trade. A minimum output is only
-  // meaningful against the amount, asset and fee tier it was derived from.
+  // Clear the minimum when the trade it was quoted for changes. A minimum
+  // output is only meaningful against the amount and asset it was derived from.
   useEffect(() => {
     setSwapMinOut("");
-  }, [swapAmountIn, swapAsset, swapFeeTier]);
+  }, [swapAmountIn, swapAsset]);
   const parsedSwapMinOut = tryParseUnits(swapMinOut, swapAssetDecimals);
 
   const swapInputsValid = Boolean(
-    vault && !vault.isSettled && vault.depositPaid && swapAsset &&
+    vault && !vault.isSettled && !vault.isExpired && vault.depositPaid && swapAsset && swapFee &&
     parsedSwapIn !== undefined && parsedSwapMinOut !== undefined &&
     parsedSwapIn <= vault.investableRemaining
   );
 
-  // The form's own checks cover only what the client can see — balance and
-  // well-formedness. The vault additionally enforces the TWAP window, the
-  // entry-impact cap, the tier ceiling and the exposure cap, none of which are
-  // knowable from the inputs alone.
+  // The form's own checks cover only what the client can see. The vault also
+  // enforces the TWAP window, pool history depth, entry impact, the tier
+  // ceiling, the exposure cap and exitability — none knowable from the inputs.
   const swapPreflight = useSwapPreflight({
     vaultAddress: latestVaultAddress,
     enabled: swapInputsValid,
     functionName: "swap",
-    args: [swapAsset, parsedSwapIn, parsedSwapMinOut, swapFeeTier],
+    args: [swapAsset, parsedSwapIn, parsedSwapMinOut, swapFee],
   });
 
   if (!isConnected) {
     return <EmptyState message="Connect the borrower wallet to view your vault." />;
   }
 
-  if (kycError) {
-    return <EmptyState message={`KYC check failed: ${kycError.shortMessage || kycError.message}`} />;
+  if (!elig.ready) {
+    return <EmptyState message="Covenza is not deployed on this network yet." />;
   }
 
-  if (isVerified === undefined) {
-    return <EmptyState message="Checking KYC status..." />;
+  if (elig.error) {
+    return <EmptyState message={`Eligibility check failed: ${elig.error.shortMessage || elig.error.message}`} />;
   }
 
-  if (!isVerified) {
-    return <KycGate address={address} />;
+  if (elig.eligible === undefined) {
+    return <EmptyState message="Checking eligibility..." />;
   }
 
-  // No vault yet is no longer a dead end. Before mandates a borrower had to
-  // find a lender and ask them to originate; now the terms are published and
-  // the borrower fills them.
+  // An ineligible wallet still sees its existing loans — a lapsed attestation
+  // stops NEW borrowing, not repayment, and hiding a live loan behind the gate
+  // would hide its deadline. Only a wallet with no vaults at all is stopped here.
+  if (!elig.eligible && allVaults.length === 0) {
+    return <KycGate address={address} role="borrower" onEligible={elig.refetch} />;
+  }
+
+  const onFilled = () => { refetchVaultList(); refetchVaultStatuses(); };
+
+  // No vault yet is not a dead end: lenders publish terms and the borrower
+  // fills them.
   if (!vault) {
     return (
       <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-        <VerifiedBadge address={address} />
+        <EligibleBadge elig={elig} />
         <div>
           <p style={{ fontSize: 13, fontWeight: 600, color: "var(--parch)", margin: "0 0 4px" }}>
             Available mandates
@@ -304,23 +304,19 @@ export function BorrowerTab() {
             deposit, and the loan opens in a single transaction.
           </p>
         </div>
-        {/* A fill creates this borrower's first vault, which is what this
-            branch is testing for — so the vault list has to be re-read or the
-            board keeps showing until a manual reload. */}
-        <MandateBoard onFilled={() => { refetchVaultList(); refetchVaultStatuses(); }} />
+        <MandateBoard onFilled={onFilled} />
       </div>
     );
   }
 
-  const isEarly = !vault.isExpired;
   const canAct = !vault.isSettled && !vault.isExpired;
 
   // --- Deposit ---
   //
   // payDeposit pulls the deposit AND the insurance premium in a single
-  // transfer, so an approval covering only the deposit reverts. The premium
-  // funds the pool upfront rather than accruing to settlement, because a loan
-  // ending in a loss might otherwise never pay it.
+  // transfer, so an approval covering only the deposit reverts. Mandate fills
+  // pay both in the fill itself; this is for a loan a lender originated
+  // directly.
   const depositTotal = vault.depositPlusPremium ?? vault.requiredDeposit;
 
   const needsDepositApproval =
@@ -351,48 +347,16 @@ export function BorrowerTab() {
     }
   }
 
-  // --- Yield venue (Aave V3 or any ERC-4626 vault) ---
-  const parsedSupply = tryParseUnits(supplyAmount, vault.decimals);
-  const parsedWithdraw = tryParseUnits(withdrawAmount, vault.decimals);
-
-  // Always the position's value in the LOAN asset, never a share count —
-  // the vault converts before returning it, so ERC-4626 appreciation is
-  // already reflected and the amounts below are directly comparable.
-  const yieldPosition = vault.yieldPositionValue;
-
-  const supplyDisabled = !canAct || !vault.depositPaid || !vault.yieldSupported || parsedSupply === undefined || parsedSupply > vault.investableRemaining;
-  const supplyReason = !vault.depositPaid
-    ? "Pay the deposit before supplying to the yield venue."
-    : !vault.yieldSupported
-    ? "This asset has no yield venue configured."
-    : !canAct
-    ? "Vault is settled or expired."
-    : parsedSupply === undefined
-    ? "Enter a valid amount."
-    : parsedSupply > vault.investableRemaining
-    ? `Exceeds investable balance (${formatTokenAmount(vault.investableRemaining, vault.decimals)} ${vault.symbol}).`
-    : null;
-
-  const withdrawDisabled = !canAct || yieldPosition <= 0n || parsedWithdraw === undefined || parsedWithdraw > yieldPosition;
-  const withdrawReason = yieldPosition <= 0n
-    ? "No yield position to withdraw from."
-    : !canAct
-    ? "Vault is settled or expired."
-    : parsedWithdraw === undefined
-    ? "Enter a valid amount."
-    : parsedWithdraw > yieldPosition
-    ? "Exceeds current yield position."
-    : null;
-
   // --- Swap ---
-  // (parsing and pre-flight live above the early returns — hooks rules)
   const swapDisabled = !swapInputsValid || swapPreflight.status === "would-revert";
   const swapDisabledReason = !vault.depositPaid
     ? "Pay the deposit before swapping."
     : !canAct
-    ? "Vault is settled or expired."
+    ? "Vault is settled or past its deadline."
     : !swapAsset
-    ? "No whitelisted destination asset available."
+    ? "No destination asset is available to this vault."
+    : !swapFee
+    ? "No approved pool for this pair."
     : parsedSwapIn === undefined
     ? "Enter a valid amount to swap."
     : parsedSwapMinOut === undefined
@@ -400,23 +364,24 @@ export function BorrowerTab() {
     : parsedSwapIn > vault.investableRemaining
     ? `Exceeds investable balance (${formatTokenAmount(vault.investableRemaining, vault.decimals)} ${vault.symbol}).`
     : swapPreflight.status === "would-revert"
-    ? explainSwapRefusal(swapPreflight.reason, parsedSwapMinOut, floorOut, vault, swapAssetDecimals)
+    ? explainSwapRefusal(swapPreflight.reason, parsedSwapMinOut, floorOut, swapAssetDecimals)
     : null;
 
-  // --- Settle ---
-  const settleDisabled = vault.isSettled || (isEarly && !vault.depositPaid);
-  const settleReason = vault.isSettled
-    ? "Vault already settled."
-    : isEarly && !vault.depositPaid
-    ? "Pay the deposit before closing the loan."
-    : null;
-  const settleLabel = isEarly ? "Repay & close loan" : "Settle expired loan";
+  const hasTierBlocked = [...unavailableTargets.values()].includes("tier");
+  const hasPoolBlocked = [...unavailableTargets.values()].includes("pool");
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-      {/* Only shown once there is a choice to make. A single loan needs no
-          switcher, and settled loans are labelled so the borrower is not
-          asked to tell them apart by address. */}
+      {!elig.eligible && (
+        <div style={{ ...cardStyle, borderColor: "var(--brick)" }}>
+          <p style={{ fontSize: 12, color: "var(--brick)", margin: 0, lineHeight: 1.6 }}>
+            {elig.reason} Your existing loans are unaffected and can be repaid and settled as normal;
+            a new loan needs a current attestation.
+          </p>
+        </div>
+      )}
+
+      {/* Only shown once there is a choice to make. */}
       {vaultList.length > 1 && (
         <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center" }}>
           {vaultList.map((v) => {
@@ -446,7 +411,7 @@ export function BorrowerTab() {
       {/* Keyed on having no ACTIVE loan anywhere, not on this vault being
           settled — otherwise merely looking at an old closed loan would offer
           to open another while one is already running. */}
-      {activeCount === 0 && (
+      {activeCount === 0 && elig.eligible && (
         <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
           <div>
             <p style={{ fontSize: 13, fontWeight: 600, color: "var(--parch)", margin: "0 0 4px" }}>
@@ -456,18 +421,20 @@ export function BorrowerTab() {
               Nothing outstanding. Any live mandate can be filled straight away.
             </p>
           </div>
-          <MandateBoard onFilled={() => { refetchVaultList(); refetchVaultStatuses(); }} />
+          <MandateBoard onFilled={onFilled} />
         </div>
+      )}
+      {activeCount === 0 && !elig.eligible && (
+        <KycGate address={address} role="borrower" onEligible={elig.refetch} />
       )}
 
       {/* --- Deposit --- */}
-      <div style={cardStyle}>
-        <p style={{ fontSize: 11, color: "var(--parch-dim)", margin: "0 0 4px" }}>Deposit</p>
+      {!vault.isSettled && !vault.depositPaid && (
+        <div style={cardStyle}>
+          <p style={{ fontSize: 11, color: "var(--parch-dim)", margin: "0 0 4px" }}>Deposit</p>
 
-        {/* Two amounts leave the borrower's wallet in one transaction, and only
-            one of them comes back. Showing a single total would misrepresent
-            what is at stake versus what is spent. */}
-        {!vault.depositPaid && (
+          {/* Two amounts leave the borrower's wallet in one transaction, and
+              only one of them comes back. */}
           <div style={{ display: "flex", flexDirection: "column", gap: 4, margin: "0 0 12px" }}>
             <CostRow
               label="Deposit — returned at settlement, less any loss"
@@ -487,89 +454,25 @@ export function BorrowerTab() {
               </>
             )}
           </div>
-        )}
 
-        <ActionButton
-          label={needsDepositApproval ? `Approve ${vault.symbol}` : "Pay deposit"}
-          primary={!depositDisabled}
-          disabled={depositDisabled}
-          disabledReason={depositReason}
-          loading={needsDepositApproval ? (approvePending || approveConfirming) && depositApproving : depositAction.isPending || depositAction.isConfirming}
-          onClick={needsDepositApproval ? approveDeposit : () => depositAction.call(latestVaultAddress, "payDeposit")}
-        />
-        {(approveError || depositAction.error) && (
-          <p style={{ fontSize: 12, color: "var(--brick)", marginTop: 10 }}>
-            {approveError?.shortMessage || approveError?.message || depositAction.error?.shortMessage || depositAction.error?.message}
-          </p>
-        )}
-      </div>
-
-      {/* --- Yield venue --- */}
-      {vault.yieldSupported && (
-        <div style={cardStyle}>
-          <p style={{ fontSize: 11, color: "var(--parch-dim)", margin: "0 0 4px" }}>
-            Yield — {vault.venueLabel}
-            {/* No real ERC-4626 venue exists on this chain: Aave and Morpho are
-                both absent, so the registered venue is a mock. The production
-                deploy guard refuses to ship with any venue configured, which
-                is the measure of how much this matters — worth saying on the
-                panel rather than only in the deploy script. */}
-            <span style={{ color: "var(--brick)" }}> · test venue, not a real yield source</span>
-          </p>
-          <p style={{ fontSize: 11, color: "var(--parch-dim)", margin: "0 0 12px" }}>
-            Investable now: {formatTokenAmount(vault.investableRemaining, vault.decimals)} {vault.symbol}
-            {yieldPosition > 0n && (
-              <> · Supplied: {formatTokenAmount(yieldPosition, vault.decimals)} {vault.symbol}</>
-            )}
-          </p>
-          <Row2>
-            <Field label={`Supply amount (${vault.symbol})`}>
-              <input value={supplyAmount} onChange={(e) => setSupplyAmount(e.target.value)} style={inputStyle} placeholder="0.0" />
-            </Field>
-            <div style={{ alignSelf: "flex-end", marginBottom: 12 }}>
-              <ActionButton
-                label="Supply"
-                primary={!supplyDisabled}
-                disabled={supplyDisabled}
-                disabledReason={supplyReason}
-                loading={aaveAction.isPending || aaveAction.isConfirming ? aavePending === "supply" : false}
-                onClick={() => {
-                  setAavePending("supply");
-                  aaveAction.call(latestVaultAddress, "supplyToYield", [parsedSupply]);
-                }}
-              />
-            </div>
-          </Row2>
-          {yieldPosition > 0n && (
-            <Row2>
-              <Field label={`Withdraw amount (${vault.symbol})`}>
-                <input value={withdrawAmount} onChange={(e) => setWithdrawAmount(e.target.value)} style={inputStyle} placeholder="0.0" />
-              </Field>
-              <div style={{ alignSelf: "flex-end", marginBottom: 12 }}>
-                <ActionButton
-                  label="Withdraw"
-                  primary={!withdrawDisabled}
-                  disabled={withdrawDisabled}
-                  disabledReason={withdrawReason}
-                  loading={aaveAction.isPending || aaveAction.isConfirming ? aavePending === "withdraw" : false}
-                  onClick={() => {
-                    setAavePending("withdraw");
-                    aaveAction.call(latestVaultAddress, "withdrawFromYield", [parsedWithdraw]);
-                  }}
-                />
-              </div>
-            </Row2>
-          )}
-          {aaveAction.error && (
-            <p style={{ fontSize: 12, color: "var(--brick)", marginTop: 4 }}>
-              {aaveAction.error.shortMessage || aaveAction.error.message}
+          <ActionButton
+            label={needsDepositApproval ? `Approve ${vault.symbol}` : "Pay deposit"}
+            primary={!depositDisabled}
+            disabled={depositDisabled}
+            disabledReason={depositReason}
+            loading={needsDepositApproval ? (approvePending || approveConfirming) && depositApproving : depositAction.isPending || depositAction.isConfirming}
+            onClick={needsDepositApproval ? approveDeposit : () => depositAction.call(latestVaultAddress, "payDeposit")}
+          />
+          {(approveError || depositAction.error) && (
+            <p style={{ fontSize: 12, color: "var(--brick)", marginTop: 10 }}>
+              {approveError?.shortMessage || approveError?.message || depositAction.error?.shortMessage || depositAction.error?.message}
             </p>
           )}
         </div>
       )}
 
       {/* --- Directional swap --- */}
-      {swapTargets.length > 0 && (
+      {canAct && swapTargets.length > 0 && (
         <div style={cardStyle}>
           <p style={{ fontSize: 11, color: "var(--parch-dim)", margin: "0 0 12px" }}>
             Swap {vault.symbol} for another whitelisted asset
@@ -583,13 +486,29 @@ export function BorrowerTab() {
               onChange={setSwapAsset}
               unavailable={unavailableTargets}
             />
-            {unavailableTargets.size > 0 && (
+            {hasTierBlocked && (
               <p style={{ fontSize: 10.5, color: "var(--slate)", margin: "6px 0 0", lineHeight: 1.5 }}>
-                Struck-through assets sit above this vault's {vault.maxTierLabel} ceiling, which
-                the lender set at origination. No amount or price makes them available.
+                Struck-through assets have sat above this vault's {vault.maxTierLabel} ceiling at some
+                point since the loan began; the lender agreed that ceiling at origination. No amount or
+                price makes them available.
+              </p>
+            )}
+            {hasPoolBlocked && (
+              <p style={{ fontSize: 10.5, color: "var(--slate)", margin: "6px 0 0", lineHeight: 1.5 }}>
+                Some assets have no pool approved against {vault.symbol} yet, so they cannot be swapped
+                into.
               </p>
             )}
           </Field>
+
+          {swapFee ? (
+            <p style={{ fontSize: 11, color: "var(--parch-dim)", margin: "-4px 0 12px", lineHeight: 1.5 }}>
+              Trades through the {FEE_LABELS[swapFee] || `${swapFee / 10000}%`} pool
+              {heldByAddress.has(swapAsset.toLowerCase())
+                ? " — the pool this vault's open position was bought through."
+                : " — the one the protocol approves for this pair."}
+            </p>
+          ) : null}
 
           <Row2>
             <Field label={`Amount to swap (${vault.symbol})`}>
@@ -598,7 +517,7 @@ export function BorrowerTab() {
             <Field label={`Min. output (${symbolForToken(chainId, swapAsset) || "—"})`}>
               <input value={swapMinOut} onChange={(e) => setSwapMinOut(e.target.value)} style={inputStyle} placeholder="0.0" />
               {quoteOk && swapAssetDecimals !== undefined && (
-                <div style={{ display: "flex", alignItems: "baseline", gap: 8, marginTop: 5 }}>
+                <div style={{ display: "flex", alignItems: "baseline", gap: 8, marginTop: 5, flexWrap: "wrap" }}>
                   <span style={{ fontSize: 10.5, color: "var(--parch-dim)" }}>
                     TWAP {formatTokenAmount(twapOut, swapAssetDecimals)}
                   </span>
@@ -618,38 +537,15 @@ export function BorrowerTab() {
                 </div>
               )}
               {parsedSwapIn && swapQuote && !quoteOk && (
-                <p style={{ fontSize: 10.5, color: "var(--brick)", margin: "5px 0 0" }}>
-                  No usable price history for this pair at this fee tier — the swap would be
-                  refused. Try another fee tier.
+                <p style={{ fontSize: 10.5, color: "var(--brick)", margin: "5px 0 0", lineHeight: 1.5 }}>
+                  The approved pool cannot be priced right now — it has too little price history for the
+                  TWAP window — so the swap would be refused.
                 </p>
               )}
             </Field>
           </Row2>
 
-          <Field label="Pool fee tier">
-            <div style={{ display: "inline-flex", background: "var(--ink)", border: "1px solid var(--hairline)", borderRadius: 8, padding: 3 }}>
-              {FEE_TIERS.map((tier) => {
-                const active = swapFeeTier === tier.value;
-                return (
-                  <button
-                    key={tier.value}
-                    type="button"
-                    onClick={() => setSwapFeeTier(tier.value)}
-                    style={{
-                      border: "none", borderRadius: 6, padding: "5px 12px", fontSize: 12, cursor: "pointer",
-                      background: active ? "var(--brass)" : "transparent",
-                      color: active ? "#1C1C1A" : "var(--parch-dim)",
-                      fontWeight: active ? 600 : 400,
-                    }}
-                  >
-                    {tier.label}
-                  </button>
-                );
-              })}
-            </div>
-          </Field>
-
-          <p style={{ fontSize: 11, color: "var(--parch-dim)", margin: "-4px 0 12px" }}>
+          <p style={{ fontSize: 11, color: "var(--parch-dim)", margin: "-4px 0 12px", lineHeight: 1.5 }}>
             Minimum output is your own slippage protection, enforced on-chain. The TWAP above is
             the reference price; the vault refuses anything more than a short distance below it,
             so setting your minimum under that figure does not buy you a looser trade.
@@ -661,7 +557,7 @@ export function BorrowerTab() {
             disabled={swapDisabled}
             disabledReason={swapDisabledReason}
             loading={swapAction.isPending || swapAction.isConfirming}
-            onClick={() => swapAction.call(latestVaultAddress, "swap", [swapAsset, parsedSwapIn, parsedSwapMinOut, swapFeeTier])}
+            onClick={() => swapAction.call(latestVaultAddress, "swap", [swapAsset, parsedSwapIn, parsedSwapMinOut, swapFee])}
           />
           {swapAction.error && (
             <p style={{ fontSize: 12, color: "var(--brick)", marginTop: 10 }}>
@@ -672,10 +568,10 @@ export function BorrowerTab() {
       )}
 
       {/* --- Swap back held assets --- */}
-      {heldAssets.length > 0 && (
+      {canAct && heldAssets.length > 0 && (
         <div>
           <p style={{ fontSize: 11, color: "var(--parch-dim)", margin: "0 0 10px" }}>
-            Held foreign assets ({heldAssets.length}) — will be forced back to {vault.symbol} at settlement
+            Held foreign assets ({heldAssets.length}) — sold back to {vault.symbol} at settlement
             if not closed manually first
           </p>
           <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
@@ -696,23 +592,12 @@ export function BorrowerTab() {
         </div>
       )}
 
-      {/* --- Settle --- */}
-      <div style={cardStyle}>
-        <p style={{ fontSize: 11, color: "var(--parch-dim)", margin: "0 0 12px" }}>Settlement</p>
-        <ActionButton
-          label={settleLabel}
-          primary={!settleDisabled}
-          disabled={settleDisabled}
-          disabledReason={settleReason}
-          loading={settleAction.isPending || settleAction.isConfirming}
-          onClick={() => settleAction.call(latestVaultAddress, "settle")}
-        />
-        {settleAction.error && (
-          <p style={{ fontSize: 12, color: "var(--brick)", marginTop: 10 }}>
-            {settleAction.error.shortMessage || settleAction.error.message}
-          </p>
-        )}
-      </div>
+      {/* --- Settle, settle in kind, cancel, claim --- */}
+      <VaultActions
+        vault={vault}
+        role="borrower"
+        onDone={() => { refetchVaultData(); refetchVaultList(); refetchVaultStatuses(); refetchHeldAssets(); }}
+      />
     </div>
   );
 }
@@ -734,8 +619,13 @@ function SwapBackRow({ vaultAddress, held, loanSymbol, loanDecimals, onDone }) {
   const parsedAmountIn = tryParseUnits(amountIn, held.decimals);
   const parsedMinOut = tryParseUnits(minOut, loanDecimals);
 
+  // `amount` is what the vault recorded buying, capped by what it still holds.
+  // Tokens sent to the vault directly are not the borrower's to sell, and the
+  // vault refuses more than heldAmount (KRAIT-003).
+  const max = held.amount;
+
   const inputsValid =
-    parsedAmountIn !== undefined && parsedMinOut !== undefined && parsedAmountIn <= held.balance;
+    parsedAmountIn !== undefined && parsedMinOut !== undefined && parsedAmountIn <= max;
 
   const preflight = useSwapPreflight({
     vaultAddress,
@@ -749,24 +639,30 @@ function SwapBackRow({ vaultAddress, held, loanSymbol, loanDecimals, onDone }) {
     ? "Enter a valid amount."
     : parsedMinOut === undefined
     ? "Enter a minimum output."
-    : parsedAmountIn > held.balance
-    // The displayed balance is rounded for legibility, so typing what is on
-    // screen can exceed the real one by a few wei. Say so, and offer the exact
-    // figure rather than making the borrower guess how far down to round.
-    ? "Amount exceeds held balance — use Max for the exact figure."
+    : parsedAmountIn > max
+    // The displayed figure is rounded for legibility, so typing what is on
+    // screen can exceed the real one by a few wei.
+    ? "Amount exceeds what this vault holds — use Max for the exact figure."
     : preflight.status === "would-revert"
-    ? preflight.reason
+    ? explainSwapBackRefusal(preflight.reason)
     : null;
+
+  const donated = held.balance > held.recorded;
 
   return (
     <div style={cardStyle}>
-      <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 10 }}>
-        <span className="mono" style={{ fontSize: 13, color: "var(--parch)" }}>{held.symbol}</span>
+      <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 10, gap: 12 }}>
+        <span className="mono" style={{ fontSize: 13, color: "var(--parch)" }}>
+          {held.symbol}
+          {held.feeTier ? (
+            <span style={{ fontSize: 10.5, color: "var(--parch-dim)" }}> · {FEE_LABELS[held.feeTier] || held.feeTier} pool</span>
+          ) : null}
+        </span>
         <span className="mono" style={{ fontSize: 12, color: "var(--parch-dim)" }}>
-          Held: {formatTokenAmount(held.balance, held.decimals)}
+          Held: {formatTokenAmount(max, held.decimals)}
           <button
             type="button"
-            onClick={() => setAmountIn(formatUnits(held.balance, held.decimals))}
+            onClick={() => setAmountIn(formatUnits(max, held.decimals))}
             style={{
               background: "none", border: "none", padding: "0 0 0 8px",
               color: "var(--slate)", fontSize: 11, cursor: "pointer", textDecoration: "underline",
@@ -776,19 +672,29 @@ function SwapBackRow({ vaultAddress, held, loanSymbol, loanDecimals, onDone }) {
           </button>
         </span>
       </div>
+      {donated && (
+        <p style={{ fontSize: 10.5, color: "var(--slate)", margin: "0 0 10px", lineHeight: 1.5 }}>
+          The vault's balance is {formatTokenAmount(held.balance, held.decimals)}; the excess was sent to it
+          directly rather than bought, and is not counted as the position.
+        </p>
+      )}
       <Row2>
         <Field label={`Amount (${held.symbol})`}>
           <input
             value={amountIn}
             onChange={(e) => setAmountIn(e.target.value)}
             style={inputStyle}
-            placeholder={formatTokenAmount(held.balance, held.decimals)}
+            placeholder={formatTokenAmount(max, held.decimals)}
           />
         </Field>
         <Field label={`Min. output (${loanSymbol})`}>
           <input value={minOut} onChange={(e) => setMinOut(e.target.value)} style={inputStyle} placeholder="0.0" />
         </Field>
       </Row2>
+      <p style={{ fontSize: 10.5, color: "var(--parch-dim)", margin: "-4px 0 10px", lineHeight: 1.5 }}>
+        The vault never sells below the TWAP less its tolerance, whatever minimum is entered here;
+        a higher minimum only tightens it.
+      </p>
       <ActionButton
         label={`Swap back to ${loanSymbol}`}
         primary={!disabled}
@@ -803,28 +709,32 @@ function SwapBackRow({ vaultAddress, held, loanSymbol, loanDecimals, onDone }) {
 }
 
 /**
- * @param unavailable  Set of asset addresses this vault may never hold, with
- *                     the reason. Rendered struck through and unclickable.
+ * @param unavailable  Map of asset address (lowercase) → "tier" | "pool".
+ *                     Rendered struck through and unclickable.
  *
- * Marking them here rather than letting them be selected is the point. An
- * asset above the vault's risk ceiling can never be swapped into, whatever
- * amount or price is entered — but the form used to accept the selection, ask
- * for a minimum output, and only then report "Asset exceeds this vault's risk
- * mandate". The borrower was made to solve a solvable problem before being
- * told about the unsolvable one.
+ * Marking them here rather than letting them be selected is the point: an
+ * asset the vault can never hold should not be selectable, then refused only
+ * after the borrower has filled in an amount and a minimum.
  */
 function AssetSwitcher({ assets, chainId, value, onChange, unavailable }) {
   return (
-    <div style={{ display: "inline-flex", background: "var(--ink)", border: "1px solid var(--hairline)", borderRadius: 8, padding: 3 }}>
+    <div style={{ display: "inline-flex", flexWrap: "wrap", background: "var(--ink)", border: "1px solid var(--hairline)", borderRadius: 8, padding: 3 }}>
       {assets.map((asset) => {
         const active = asset === value;
-        const blocked = unavailable?.has?.(asset.toLowerCase());
+        const why = unavailable?.get?.(asset.toLowerCase());
+        const blocked = Boolean(why);
         return (
           <button
             key={asset}
             type="button"
             disabled={blocked}
-            title={blocked ? "Above this vault's risk ceiling — agreed with the lender at origination" : undefined}
+            title={
+              why === "tier"
+                ? "Above this vault's risk ceiling — agreed with the lender at origination"
+                : why === "pool"
+                ? "No approved pool against the loan asset"
+                : undefined
+            }
             onClick={() => !blocked && onChange(asset)}
             style={{
               border: "none", borderRadius: 6, padding: "6px 14px", fontSize: 12,
@@ -844,11 +754,8 @@ function AssetSwitcher({ assets, chainId, value, onChange, unavailable }) {
 }
 
 /**
- * One line of the borrower's up-front cost.
- *
- * Deposit and premium are shown separately because only one of them comes
- * back. A single combined figure would tell the borrower what leaves their
- * wallet while hiding which part is at stake and which part is simply spent.
+ * One line of the borrower's up-front cost. Deposit and premium are shown
+ * separately because only one of them comes back.
  */
 function CostRow({ label, value, emphasis }) {
   return (
@@ -903,40 +810,20 @@ const inputStyle = {
   fontSize: 13,
   fontFamily: "IBM Plex Mono, monospace",
 };
+
 /**
- * Confirms the wallet is verified, and by whom.
+ * Confirms the wallet may borrow, by whose attestation, and until when.
  *
- * A verified borrower previously had no acknowledgement at all: the only
- * signal was the ABSENCE of the verification gate, which you would have to
- * know existed to notice. Someone freshly verified got no confirmation it had
- * worked, and someone unsure of their status had nothing to check.
- *
- * Naming the attester matters more here than it looks. Covenza performs no
- * identity check itself — it records that a recognised third party did — so
- * "who admitted this wallet" is the entirety of what verification means, and
- * it is exactly what the attester model makes auditable.
+ * Naming the attester matters more than it looks. Covenza performs no identity
+ * check itself — it records that a recognised third party did — so "who
+ * admitted this wallet" is the entirety of what verification means. The expiry
+ * is shown because an attestation now lapses, and a borrower should see that
+ * coming rather than find out from a refused fill.
  */
-function VerifiedBadge({ address }) {
-  const chainId = useChainId();
-  const contracts = getContractsForChain(chainId);
-
-  const { data: attester } = useReadContract({
-    address: contracts.kycRegistry,
-    abi: kycAbi,
-    functionName: "attestedBy",
-    args: [address],
-    query: { enabled: Boolean(address) && !isPlaceholder(contracts.kycRegistry) },
-  });
-
-  const { data: info } = useReadContract({
-    address: contracts.kycRegistry,
-    abi: kycAbi,
-    functionName: "attesters",
-    args: [attester],
-    query: { enabled: Boolean(attester) && attester !== "0x0000000000000000000000000000000000000000" },
-  });
-
-  const providerName = info?.[1];
+function EligibleBadge({ elig }) {
+  const { live: providers } = useAttesters();
+  const issuer = providers.find((p) => p.key.toLowerCase() === (elig.attester || "").toLowerCase());
+  const daysLeft = elig.validUntil ? Math.floor((elig.validUntil - Date.now() / 1000) / 86400) : null;
 
   return (
     <div
@@ -952,9 +839,10 @@ function VerifiedBadge({ address }) {
     >
       <span style={{ color: "var(--brass)", fontSize: 13 }}>&#10003;</span>
       <div>
-        <span style={{ fontSize: 12, color: "var(--parch)" }}>Verified — you can borrow</span>
-        <span style={{ fontSize: 11, color: "var(--parch-dim)" }}>
-          {providerName ? ` · attested by ${providerName}` : ""}
+        <span style={{ fontSize: 12, color: "var(--parch)" }}>Eligible — you can borrow</span>
+        <span style={{ fontSize: 11, color: daysLeft !== null && daysLeft < 14 ? "var(--brick)" : "var(--parch-dim)" }}>
+          {elig.manual ? " · granted by the operator" : issuer ? ` · attested by ${issuer.name}` : ""}
+          {daysLeft !== null ? ` · valid ${daysLeft} more day${daysLeft === 1 ? "" : "s"}` : ""}
         </span>
       </div>
     </div>
@@ -965,27 +853,19 @@ function VerifiedBadge({ address }) {
  * Turns the router's refusal into the protocol's own explanation, where the two
  * describe the same thing from different sides.
  *
- * Observed live: a 10 tUSDG swap quoted at the vault's own entry-impact floor
- * was refused with Uniswap's "Too little received". Accurate, and useless — the
- * borrower is told the trade failed, not that it was too large for the pool,
- * and nothing points at either remedy. A 1 tUSDG swap through the same tier
- * succeeded.
- *
- * The distinction that matters: if the borrower's minimum is at or below what
- * the vault itself would accept, then no minimum they could set would help.
- * The pool cannot deliver the impact floor at this size, so the vault would
- * refuse on entry impact even if the router did not. That is a different
- * problem from asking for too much, and it has different answers.
+ * If the borrower's minimum is at or below what the vault itself would accept,
+ * no minimum they could set would help: the pool cannot deliver the impact
+ * floor at this size. That is a different problem from asking for too much.
  */
-function explainSwapRefusal(reason, minOut, floorOut, vault, outDecimals) {
+function explainSwapRefusal(reason, minOut, floorOut, outDecimals) {
   const tooLittle = /too little received|insufficient output/i.test(reason || "");
   const askingNoMoreThanTheVaultWould =
     minOut !== undefined && floorOut !== undefined && minOut <= floorOut;
 
   if (tooLittle && askingNoMoreThanTheVaultWould) {
     return (
-      "Position too large for this pool's depth at this fee tier — the price moves " +
-      "further than the vault permits on entry. Try a smaller amount, or a different fee tier."
+      "Position too large for this pool's depth — the price moves further than the vault " +
+      "permits on entry. Try a smaller amount."
     );
   }
 
@@ -996,5 +876,16 @@ function explainSwapRefusal(reason, minOut, floorOut, vault, outDecimals) {
     );
   }
 
+  if (/too little price history/i.test(reason || "")) {
+    return "The approved pool keeps too little price history for the TWAP window, so the vault will not enter it.";
+  }
+
+  return reason;
+}
+
+function explainSwapBackRefusal(reason) {
+  if (/too little received|Received less than minimum/i.test(reason || "")) {
+    return "The pool cannot fill this at the TWAP less the tolerance right now. Try a smaller amount, or wait for the price to settle.";
+  }
   return reason;
 }

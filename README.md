@@ -1,10 +1,10 @@
 # Covenza — web interface
 
-React interface for the [Covenza](https://github.com/jsteele111/covenza-backend) low-collateral lending protocol on Arbitrum.
+React interface for the [Covenza](https://github.com/jsteele111/covenza-backend) fixed-term, low-collateral, non-liquidating lending protocol on Robinhood Chain.
 
 **Live: [covenza.xyz](https://covenza.xyz)** · [Protocol dashboard](https://covenza.xyz/dashboard) (no wallet required)
 
-Contracts and tests live in the separate [covenza-backend](https://github.com/jsteele111/covenza-backend) repository.
+Contracts and tests live in the separate [covenza-backend](https://github.com/jsteele111/covenza-backend) repository. This interface targets the contracts frozen for audit at tag `audit-freeze-2026-10`; its ABIs in `src/config/abi/` are exported from that build.
 
 ---
 
@@ -14,43 +14,33 @@ Four views, gated by the connected wallet's on-chain role.
 
 ### `/dashboard` — public, no wallet
 
-The transparency layer. Per-asset insurance reserves, active and all-time principal, the protocol-wide settlement configuration read live from `AssetRegistry`, and the deposit-sizing model's recommendations at 95% and 99% confidence across 7/30/90-day terms.
+The transparency layer. Per-asset insurance reserves, active and all-time principal, the protocol-wide settlement configuration read live from `AssetRegistry`, both limits on an insurance draw, and the deposit-sizing model's recommendations at 95% and 99% confidence across 7/30/90-day terms.
 
-Deliberately requires no wallet — anyone should be able to assess the protocol's risk buffers before deciding to lend or borrow.
+### `/lender` — mandates and origination
 
-### `/lender` — origination
+Lenders must hold an attestation covering the factory's `requiredLenderClaims` (sanctions screening by default); the page checks this first and guides an unscreened wallet through it.
 
-Asset selection across the whitelist, live KYC verification of the borrower address, and loan terms. The deposit field is backed by the VaR model: a one-click fill applies the recommended percentage for that asset and duration, and the insurance skim owed at origination is disclosed before signing.
+- **Publish terms (mandates).** A pricing surface over term and deposit, a per-loan maximum and a total capacity across all fills. Capital stays in the lender's wallet; the approval offered is bounded to the total capacity.
+- **Originate directly** for a known borrower, with live eligibility of the borrower address, the deposit floor for the chosen risk ceiling and term, and both insurance limits (share of principal, share of reserve) shown before signing.
+- **Each vault** carries its actions: settle, settle in kind, cancel an unfunded loan, and claim a payout the token refused at settlement.
 
-Origination is a two-transaction flow — ERC20 approval, then `deployVault` — surfaced as distinct steps rather than a single opaque button.
+### `/borrower` — mandates and vault operation
 
-### `/borrower` — vault operation
+Borrowers must hold a current attestation covering `requiredBorrowerClaims` (identity, sanctions, jurisdiction by default). A lapsed attestation stops new borrowing but never hides an existing loan.
 
-Live vault statement, then the permitted actions:
+- **Fill a mandate** — size, term and deposit priced live; the contract's own quote is passed as the most the borrower will pay.
+- **Deposit** — approve and pay, for directly originated loans.
+- **Swap** — directional swaps into whitelisted assets through the pool the protocol approved for the pair, with the TWAP reference and the vault's acceptance floor from `VaultLens`.
+- **Swap back** — bounded by what the vault recorded buying, never filled below the TWAP less the tolerance.
+- **Settle / settle in kind / claim** — shared with the lender view.
 
-- **Deposit** — approve and pay. Until this completes, every other panel is disabled with an explicit reason, mirroring the contract's own `depositPaid()` gate.
-- **Aave** — supply and withdraw, bounded by the investable balance (`vaultBalance − deposit`).
-- **Swap** — directional swaps into whitelisted assets with borrower-set slippage floor and pool fee tier.
-- **Swap back** — per-held-asset unwind, with a standing note that anything still held is force-swapped at settlement.
-- **Settle** — repay and close.
-
-Each action reads its own disabled reason from live contract state, so the UI never offers something the contract would reject.
+Swaps and settlements are dry-run (`eth_call`) before signing, so a refusal shows the contract's own reason.
 
 ### `/operator` — protocol governance
 
-Settlement loss history for manual KYC review, the asset whitelist, insurance pool reserves and draw cap, and the protocol-wide settlement configuration — TWAP window and tolerance, swap-back grace period, keeper bounty rate and cap. All five settlement values are submitted atomically, matching the contract's own `setSettlementConfig` signature.
+Readable by anyone; writes require the operator role. Loss and in-kind settlement history for manual review, verified wallets, recognised identity providers, the asset whitelist and tiers, approved pools (with the price-history check), insurance draw limits and administrative withdrawal, and the settlement configuration.
 
----
-
-## Design notes
-
-**Roles are detected, not selected.** `useWalletRole` reads the connected wallet's actual on-chain relationships — operator of the KYC registry, lender or borrower on any vault. Routes are guarded against direct navigation; a wallet without a role is redirected rather than shown an error. A wallet holding several roles gets a persistent switcher.
-
-**Amounts are formatted from contract-reported decimals**, never assumed. Every vault reads its own `asset()`, then that token's `decimals()`. A USDC vault and a WETH vault render correctly without special-casing.
-
-**Undeployed contracts are stated honestly.** `isPlaceholder()` checks for zero addresses before firing reads, so a network without a deployment shows "not yet deployed" rather than a wall of failed RPC calls.
-
-**ABIs are pre-parsed once** in `config/abis.js` and consumed directly. Re-wrapping an already-parsed ABI in `parseAbi()` throws at module load and takes the whole app down before React renders — a mistake worth only making once.
+Every change open vaults read at settlement is timelocked: it is announced by the hash of its exact calldata, waits the delay in public view, and is then executed with identical arguments.
 
 ---
 
@@ -64,18 +54,31 @@ npm run dev
 
 Opens on `http://localhost:5173`.
 
-Contract addresses are already configured in `src/config/contracts.js` for Arbitrum Sepolia — no manual editing needed. Update that file only after redeploying the contracts.
+Contract addresses live in `src/config/contracts.js`, per chain (Robinhood testnet `46630`, local Hardhat `31337`). Until a network's addresses are filled in after a deploy, the app says the protocol is not deployed there rather than showing empty data.
 
 ### Environment
 
 | Variable | Required | Purpose |
 |---|---|---|
-| `VITE_WALLETCONNECT_PROJECT_ID` | Optional | WalletConnect / mobile wallets. MetaMask's extension works without it. Free ID at [cloud.reown.com](https://cloud.reown.com). |
-| `VITE_ARBITRUM_SEPOLIA_RPC_URL` | Recommended | Falls back to a public RPC, which rate-limits under the dashboard's parallel reads. |
-| `VITE_VERIFIER_SERVICE_URL` | Optional | Base URL for the KYC verifier. `http://localhost:4000` locally, `/.netlify/functions` when deployed. |
-| `VERIFIER_PRIVATE_KEY` | Server-side | Signs KYC attestations. Set in host environment only — deliberately no `VITE_` prefix, which would expose it in the client bundle. |
+| `VITE_WALLETCONNECT_PROJECT_ID` | Required | RainbowKit refuses to start without one, even for MetaMask alone. Free ID at [cloud.reown.com](https://cloud.reown.com). |
+| `VITE_ROBINHOOD_TESTNET_RPC_URL` | Recommended | Falls back to the public endpoint, which drops long-lived connections. |
+| `VITE_VERIFIER_SERVICE_URL` | Development only | The backend's local mock attester. Ignored by production builds. |
 
 Anything prefixed `VITE_` is compiled into the public bundle and readable by anyone. Treat those as configuration, not secrets.
+
+---
+
+## Design notes
+
+**Eligibility, not "verified".** Attestations carry claims and expire. The app asks `isEligible(wallet, requiredClaims)` with the claims read from the factory — the same question the factory asks at origination.
+
+**Roles are detected, not selected.** `useWalletRole` reads the connected wallet's on-chain relationships — operator, lender or borrower on any vault. A wallet holding several roles gets a persistent switcher.
+
+**Time comes from the chain.** Settlement windows are compared against the latest block's timestamp, not the browser clock.
+
+**Amounts are formatted from contract-reported decimals**, never assumed.
+
+**ABIs are exported, not hand-written.** `config/abis.js` imports the JSON ABIs from the frozen build; only the ERC-20 and Uniswap fragments are parsed from strings.
 
 ---
 
@@ -83,13 +86,13 @@ Anything prefixed `VITE_` is compiled into the public bundle and readable by any
 
 React 19 · Vite · wagmi v2 · viem · RainbowKit · React Router v7
 
-Deployed on Netlify. `netlify.toml` carries a catch-all rewrite so direct visits to `/dashboard` and the role routes resolve client-side rather than 404ing.
+Deployed on Netlify as a static site. `netlify.toml` carries a catch-all rewrite so direct visits to `/dashboard` and the role routes resolve client-side.
 
 ---
 
 ## Known limitations
 
-- **KYC intake is simulated.** The form collects no real documents and performs no checks. The signed attestation and resulting on-chain badge are real; the identity verification behind them is not yet.
-- **No live price quotes on swaps.** `minAmountOut` is borrower-supplied and enforced on-chain. The UI doesn't estimate it, because there's no on-chain quote function it could source safely — asking directly is more honest than displaying a number it can't stand behind.
+- **Testnet only**, against test tokens and a Uniswap V3 deployment the project controls.
+- **Not yet independently audited.** The contracts are frozen for audit.
 - **Vault history is scoped to the current factory.** Vaults deployed by an earlier factory don't appear.
-- **Testnet only.** Not deployed against mainnet contracts.
+- **In-kind handovers are found from event logs**, read from block 0. On a long chain an RPC with a block-range limit may refuse that read; the claim panel then shows only loan-asset payouts.

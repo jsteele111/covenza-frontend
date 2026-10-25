@@ -1,25 +1,26 @@
 import { useState, useEffect } from "react";
 import { useAccount, useChainId, useReadContract, useWriteContract, useWaitForTransactionReceipt, usePublicClient } from "wagmi";
 import { parseUnits, isAddress } from "viem";
-import { KYC_REGISTRY_ABI, VAULT_FACTORY_ABI, ASSET_REGISTRY_ABI, ERC20_ABI, INSURANCE_POOL_ABI } from "../config/abis.js";
-import { getContractsForChain, isPlaceholder, symbolForToken } from "../config/contracts.js";
+import { VAULT_FACTORY_ABI, ASSET_REGISTRY_ABI, ERC20_ABI, INSURANCE_POOL_ABI } from "../config/abis.js";
+import { getContractsForChain, isPlaceholder, symbolForToken, ZERO_ADDRESS } from "../config/contracts.js";
 import { TIER_LABELS } from "../hooks/useVaultData.js";
 import { MandatePanel } from "./MandatePanel.jsx";
 import { useLenderBook } from "../hooks/useLenderBook.js";
 import { useLatestVault } from "../hooks/useLatestVault.js";
 import { useVaultData } from "../hooks/useVaultData.js";
+import { useEligibility } from "../hooks/useEligibility.js";
 import { recommendedDeposit } from "../utils/deposit.js";
 import { formatTokenAmount, formatPercent } from "../utils/format.js";
 import { VaultStatement } from "./VaultStatement.jsx";
+import { VaultActions } from "./VaultActions.jsx";
+import { KycGate } from "./KycGate.jsx";
 import { ActionButton } from "./ActionButton.jsx";
 
-// Referrer address used for direct originations through this interface.
+// Direct originations through this interface pass ZERO_ADDRESS as referrer.
 // A platform integrating Covenza as a lending backend would pass its own
-// address here and earn a share of the protocol fee.
-const ZERO_ADDRESS = "0x0000000000000000000000000000000000000000";
+// address and earn a share of the protocol fee.
 
 // abis.js already exports pre-parsed ABIs — do not re-wrap in parseAbi().
-const kycAbi = KYC_REGISTRY_ABI;
 const factoryAbi = VAULT_FACTORY_ABI;
 const assetRegistryAbi = ASSET_REGISTRY_ABI;
 const erc20Abi = ERC20_ABI;
@@ -59,6 +60,21 @@ function tryBigInt(value) {
  * over a single writeContract/waitForReceipt pair, since they're always
  * sequential (approve, wait, then deploy) and never concurrent — same
  * shape as OperatorTab's revokingAddress pattern.
+ *
+ * October 2026 — brought up to the contracts frozen for audit:
+ *
+ *   - Lenders are screened too. The factory requires requiredLenderClaims
+ *     (sanctions screening by default) of the lender at every origination,
+ *     mandate fills included, so an unscreened lender's mandates would sit on
+ *     the board unfillable. Publishing and originating are gated here; the
+ *     book and existing vaults stay visible either way.
+ *   - The borrower check is eligibility (claims and expiry), not "verified",
+ *     and a lender cannot lend to themselves.
+ *   - The insurance note states both limits on a draw: the per-loan cap and
+ *     the share of the pool's reserve any one settlement may take (item 8).
+ *   - Each vault card carries its actions. A lender whose borrower went quiet
+ *     can settle, settle in kind, cancel an unfunded loan and claim a refused
+ *     payout from here rather than from a script.
  */
 export function LenderTab() {
   const { address, isConnected } = useAccount();
@@ -105,16 +121,13 @@ export function LenderTab() {
     query: { enabled: Boolean(selectedAsset) },
   });
 
-  // --- Borrower KYC check ---
-  const borrowerIsValidAddress = isAddress(borrower);
+  // --- Eligibility: this wallet as lender, the counterparty as borrower ---
+  const lenderElig = useEligibility(address, "lender");
 
-  const { data: isVerified } = useReadContract({
-    address: contracts.kycRegistry,
-    abi: kycAbi,
-    functionName: "isVerified",
-    args: [borrower],
-    query: { enabled: borrowerIsValidAddress },
-  });
+  const borrowerIsValidAddress = isAddress(borrower);
+  const borrowerIsSelf =
+    borrowerIsValidAddress && address && borrower.toLowerCase() === address.toLowerCase();
+  const borrowerElig = useEligibility(borrowerIsValidAddress ? borrower : undefined, "borrower");
 
   // --- Amount parsing ---
   const parsedPrincipal = tryParseUnits(principal, decimals);
@@ -160,10 +173,30 @@ export function LenderTab() {
   // The lender is paying a skim for insurance, so the limit of that insurance
   // belongs next to the price of it. Read live rather than hardcoded — the cap
   // is operator-configurable and a stale number here would be a false promise.
+  const insuranceReady = !isPlaceholder(contracts.insurancePool);
   const { data: drawCapBps } = useReadContract({
     address: contracts.insurancePool,
     abi: INSURANCE_POOL_ABI,
     functionName: "drawCapBps",
+    query: { enabled: insuranceReady },
+  });
+
+  // The second limit (item 8): one settlement may take at most this share of
+  // the asset's reserve, so a single loss cannot empty the pool for everyone
+  // behind it. On a small pool this binds long before the per-loan cap does.
+  const { data: maxDrawShareBps } = useReadContract({
+    address: contracts.insurancePool,
+    abi: INSURANCE_POOL_ABI,
+    functionName: "maxDrawShareBps",
+    query: { enabled: insuranceReady },
+  });
+
+  const { data: reserve } = useReadContract({
+    address: contracts.insurancePool,
+    abi: INSURANCE_POOL_ABI,
+    functionName: "reserveOf",
+    args: [selectedAsset],
+    query: { enabled: insuranceReady && Boolean(selectedAsset) },
   });
 
   // Deposit floor rises with the SQUARE ROOT of term and with the tier's
@@ -230,7 +263,10 @@ export function LenderTab() {
 
   // --- Writes (single pair, sequential approve-then-deploy) ---
   const { writeContract, data: hash, isPending, error, reset } = useWriteContract();
-  const { isLoading: isConfirming, isSuccess } = useWaitForTransactionReceipt({ hash });
+  const { isLoading: isConfirming, data: receipt } = useWaitForTransactionReceipt({ hash });
+  // A reverted transaction still produces a receipt; only "success" counts.
+  const isSuccess = receipt?.status === "success";
+  const reverted = receipt?.status === "reverted";
 
   const { latestVaultAddress, allVaults, refetch: refetchVaultList } = useLatestVault(address, "lender");
 
@@ -258,22 +294,32 @@ export function LenderTab() {
     );
   }
 
+  const lenderBlocked = lenderElig.eligible === false;
+
   const disabled =
+    lenderBlocked ||
     !selectedAsset ||
     !borrowerIsValidAddress ||
-    isVerified === false ||
+    borrowerIsSelf ||
+    borrowerElig.eligible !== true ||
     !aprValid ||
     depositBelowFloor ||
     parsedPrincipal === undefined ||
     parsedDeposit === undefined ||
     durationBigInt === undefined;
 
-  const disabledReason = !selectedAsset
+  const disabledReason = lenderBlocked
+    ? "This wallet is not eligible to lend — see above."
+    : !selectedAsset
     ? "No asset selected."
     : !borrowerIsValidAddress
     ? "Enter a valid borrower address."
-    : isVerified === false
-    ? "This address is not KYC verified."
+    : borrowerIsSelf
+    ? "You cannot lend to your own wallet."
+    : borrowerElig.eligible === undefined
+    ? "Checking the borrower's eligibility..."
+    : borrowerElig.eligible === false
+    ? "This address is not eligible to borrow."
     : !aprValid
     ? "Enter a valid annual rate greater than zero."
     : depositBelowFloor
@@ -301,7 +347,7 @@ export function LenderTab() {
         maxFeePerGas: fees.maxFeePerGas * 2n,
         maxPriorityFeePerGas: fees.maxPriorityFeePerGas,
       });
-    } catch (err) {
+    } catch {
       setPendingAction(null);
     }
   }
@@ -331,7 +377,7 @@ export function LenderTab() {
         maxFeePerGas: fees.maxFeePerGas * 2n,
         maxPriorityFeePerGas: fees.maxPriorityFeePerGas,
       });
-    } catch (err) {
+    } catch {
       setPendingAction(null);
     }
   }
@@ -340,6 +386,14 @@ export function LenderTab() {
 
   return (
     <div>
+      {lenderBlocked && (
+        <div style={{ marginBottom: 16 }}>
+          <KycGate address={address} role="lender" onEligible={lenderElig.refetch} />
+        </div>
+      )}
+
+      {!lenderBlocked && (
+      <>
       <div style={{ display: "inline-flex", background: "var(--panel)", border: "1px solid var(--hairline)", borderRadius: 8, padding: 3, marginBottom: 16 }}>
         {[
           ["mandate", "Publish terms"],
@@ -390,8 +444,18 @@ export function LenderTab() {
           />
         </Field>
         {borrowerIsValidAddress && (
-          <p style={{ fontSize: 11, color: isVerified ? "var(--brass)" : "var(--brick)", margin: "-8px 0 12px" }}>
-            {isVerified === undefined ? "Checking KYC status..." : isVerified ? "KYC verified" : "Not KYC verified"}
+          <p style={{
+            fontSize: 11,
+            color: borrowerIsSelf || borrowerElig.eligible === false ? "var(--brick)" : borrowerElig.eligible ? "var(--brass)" : "var(--parch-dim)",
+            margin: "-8px 0 12px",
+          }}>
+            {borrowerIsSelf
+              ? "That is your own wallet — the factory refuses a loan to yourself."
+              : borrowerElig.eligible === undefined
+              ? "Checking eligibility..."
+              : borrowerElig.eligible
+              ? `Eligible to borrow until ${new Date(borrowerElig.validUntil * 1000).toLocaleDateString()}`
+              : borrowerElig.reason || "Not eligible to borrow"}
           </p>
         )}
 
@@ -503,11 +567,20 @@ export function LenderTab() {
         {drawCapBps != null && (
           <p style={{ fontSize: 11, color: "var(--parch-dim)", margin: "-4px 0 12px", lineHeight: 1.5 }}>
             <strong>What the pool covers.</strong> After the borrower's deposit is
-            exhausted, the pool pays at most{" "}
-            <strong>{Number(drawCapBps) / 100}% of principal</strong> on this loan.
-            A larger loss is yours. The cap applies per settlement regardless of how
-            full the pool is, so it limits your protection rather than merely
-            rationing a depleted reserve.
+            exhausted, the pool pays the lesser of{" "}
+            <strong>{Number(drawCapBps) / 100}% of principal</strong>
+            {maxDrawShareBps != null && (
+              <> and <strong>{Number(maxDrawShareBps) / 100}% of the pool's {selectedSymbol} reserve</strong></>
+            )}
+            {reserve != null && decimals !== undefined && (
+              <> (currently {formatTokenAmount(reserve, decimals)} {selectedSymbol}
+                {maxDrawShareBps != null && (
+                  <>, so at most {formatTokenAmount((reserve * maxDrawShareBps) / 10000n, decimals)} {selectedSymbol}</>
+                )})</>
+            )}
+            . A larger loss is yours. Both limits apply to every settlement however full the
+            pool is, so they bound your protection rather than merely rationing a depleted
+            reserve — and on a small pool the reserve share is the one that binds.
           </p>
         )}
 
@@ -564,7 +637,14 @@ export function LenderTab() {
             {error.shortMessage || error.message}
           </p>
         )}
+        {reverted && !error && (
+          <p style={{ fontSize: 12, color: "var(--brick)", marginTop: 12 }}>
+            The transaction was mined but reverted — nothing moved.
+          </p>
+        )}
       </div>
+      )}
+      </>
       )}
 
       <LenderBook vaults={allVaults} />
@@ -640,7 +720,15 @@ function LenderBook({ vaults }) {
               alert={row.shortfall > 0n}
             />
 
-            {row.shortfall === 0n && row.settledCount > 0 && (
+            {row.inKindCount > 0 && (
+              <p style={{ fontSize: 11, color: "var(--parch-dim)", margin: "8px 0 0", lineHeight: 1.5 }}>
+                {row.inKindCount} loan{row.inKindCount > 1 ? "s were" : " was"} settled in kind and{" "}
+                {row.inKindCount > 1 ? "are" : "is"} not counted above: you received assets the vault could
+                not sell, which the cash figures do not measure.
+              </p>
+            )}
+
+            {row.shortfall === 0n && row.settledCount > row.inKindCount && (
               <p style={{ fontSize: 11, color: "var(--parch-dim)", margin: "8px 0 0", lineHeight: 1.5 }}>
                 Every closed loan returned your principal and interest in full — losses were
                 absorbed by borrower deposits before reaching you.
@@ -667,9 +755,14 @@ function BookRow({ label, value, emphasis, alert }) {
 }
 
 function LenderVaultCard({ vaultAddress }) {
-  const { vault } = useVaultData(vaultAddress);
+  const { vault, refetch } = useVaultData(vaultAddress);
   if (!vault) return null;
-  return <VaultStatement vault={vault} />;
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+      <VaultStatement vault={vault} />
+      <VaultActions vault={vault} role="lender" onDone={refetch} />
+    </div>
+  );
 }
 
 function AssetSwitcher({ assets, chainId, value, onChange }) {

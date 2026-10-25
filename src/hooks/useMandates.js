@@ -11,7 +11,8 @@ const factoryAbi = VAULT_FACTORY_ABI;
  * Two things this deliberately does NOT do.
  *
  * It does not show a mandate's offered size. It shows quoteMandateFillable,
- * which is min(allowance, balance, offer) read live. A lender's capital stays
+ * which is min(allowance, balance, per-fill maximum, remaining capacity) read
+ * live. A lender's capital stays
  * in their own wallet and an allowance can be revoked for free at any moment,
  * so a board displaying intent rather than capacity fills up with offers that
  * cannot be taken — the failure mode that hollowed out NFT bid books.
@@ -79,6 +80,13 @@ export function useMandates({ lenderFilter, onlyLive = true } = {}) {
         depositCreditBpsPerPoint: Number(terms.depositCreditBpsPerPoint),
         minDepositBps: Number(terms.minDepositBps),
         minAprBps: Number(terms.minAprBps),
+
+        // Capacity (item 13): maxPrincipal bounds each fill, totalCapacity
+        // bounds them all together. Before capacity a mandate never ran out,
+        // and a per-fill maximum read like a total.
+        totalCapacity: terms.totalCapacity,
+        filled: terms.filled,
+        remaining: terms.totalCapacity > terms.filled ? terms.totalCapacity - terms.filled : 0n,
 
         isLive: data?.[i * 3 + 1]?.result === true,
         fillable: data?.[i * 3 + 2]?.result ?? 0n,

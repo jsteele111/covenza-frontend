@@ -19,6 +19,13 @@ const DAY = 86400;
  * granted. That is what makes publishing cheap enough to do speculatively,
  * which is the point: requiring lenders to escrow funds before a counterparty
  * exists is the friction that empties the scarce side of a two-sided market.
+ *
+ * October 2026 (frozen contracts, item 13): a mandate now has a TOTAL capacity
+ * as well as a per-loan maximum. maxPrincipal bounds each fill; totalCapacity
+ * bounds all of them together, and the mandate stops filling once it is used
+ * up. Before this a "maximum 100" mandate could be filled for 100 again and
+ * again, up to whatever the allowance allowed, and the per-loan figure read
+ * like a total. The approval offered here is for the total capacity.
  */
 export function MandatePanel({ selectedAsset, selectedSymbol, decimals }) {
   const { address } = useAccount();
@@ -30,6 +37,7 @@ export function MandatePanel({ selectedAsset, selectedSymbol, decimals }) {
 
   const [minPrincipal, setMinPrincipal] = useState("10");
   const [maxPrincipal, setMaxPrincipal] = useState("100");
+  const [totalCapacity, setTotalCapacity] = useState("300");
   const [minTermDays, setMinTermDays]   = useState("1");
   const [maxTermDays, setMaxTermDays]   = useState("30");
   const [validHours, setValidHours]     = useState("6");
@@ -101,7 +109,9 @@ export function MandatePanel({ selectedAsset, selectedSymbol, decimals }) {
       : undefined;
 
   const wantedMax = tryParse(maxPrincipal, decimals);
-  const capacityShort = capacity !== undefined && wantedMax !== undefined && capacity < wantedMax;
+  const wantedTotal = tryParse(totalCapacity, decimals);
+  const capacityShort = capacity !== undefined && wantedTotal !== undefined && capacity < wantedTotal;
+  const totalBelowMax = wantedMax !== undefined && wantedTotal !== undefined && wantedTotal < wantedMax;
 
   // The floor depends on the RISK CEILING, not on the loan asset — a mandate
   // permitting Standard-tier holdings is underwriting Standard-tier
@@ -137,7 +147,7 @@ export function MandatePanel({ selectedAsset, selectedSymbol, decimals }) {
    * ours to assume on their behalf.
    */
   async function approveForMandate() {
-    const wanted = tryParse(maxPrincipal, decimals);
+    const wanted = tryParse(totalCapacity, decimals);
     if (wanted === undefined) return;
     setPendingAction("approve");
     const fees = await publicClient.estimateFeesPerGas();
@@ -184,7 +194,8 @@ export function MandatePanel({ selectedAsset, selectedSymbol, decimals }) {
   async function publish() {
     const min = tryParse(minPrincipal, decimals);
     const max = tryParse(maxPrincipal, decimals);
-    if (min === undefined || max === undefined) return;
+    const total = tryParse(totalCapacity, decimals);
+    if (min === undefined || max === undefined || total === undefined) return;
     setPendingAction("publish");
     try {
       const fees = await publicClient.estimateFeesPerGas();
@@ -206,6 +217,7 @@ export function MandatePanel({ selectedAsset, selectedSymbol, decimals }) {
           depositCreditBpsPerPoint: BigInt(preview.depositCreditBpsPerPoint),
           minDepositBps: BigInt(preview.minDepositBps),
           minAprBps: BigInt(preview.minAprBps),
+          totalCapacity: total,
         }],
         maxFeePerGas: fees.maxFeePerGas * 2n,
         maxPriorityFeePerGas: fees.maxPriorityFeePerGas,
@@ -245,8 +257,9 @@ export function MandatePanel({ selectedAsset, selectedSymbol, decimals }) {
       <p style={sectionLabelStyle}>Publish a mandate</p>
       <p style={{ fontSize: 11, color: "var(--parch-dim)", margin: "0 0 12px", lineHeight: 1.5 }}>
         Terms a borrower can take without asking you first. Your capital stays in your wallet —
-        you approve the factory for this mandate's maximum, and a fill draws on it. The approval
-        is bounded to that amount, not to your balance.
+        you approve the factory for this mandate's total capacity, and each fill draws on it. The
+        approval is bounded to that amount, not to your balance. It is one figure per asset,
+        shared by all your mandates in it: approving sets it, it does not add to it.
       </p>
 
       {/* Shown above the form rather than after publishing, because the fix is
@@ -270,7 +283,7 @@ export function MandatePanel({ selectedAsset, selectedSymbol, decimals }) {
           </p>
           <p style={{ fontSize: 11, color: "var(--parch-dim)", margin: "4px 0 0", lineHeight: 1.5 }}>
             {capacityShort
-              ? "Below the maximum size below — borrowers will only see what you can actually cover."
+              ? "Below the total capacity below — borrowers will only see what you can actually cover."
               : "The lesser of your balance and your allowance to the factory. Funds stay in your wallet."}
           </p>
         </div>
@@ -280,7 +293,7 @@ export function MandatePanel({ selectedAsset, selectedSymbol, decimals }) {
             disabled={busy}
             style={{ ...smallDangerButtonStyle, color: "var(--brass)", borderColor: "var(--brass)", whiteSpace: "nowrap" }}
           >
-            {busy ? "Approving…" : `Approve ${maxPrincipal} ${selectedSymbol}`}
+            {busy ? "Approving…" : `Approve ${totalCapacity} ${selectedSymbol}`}
           </button>
         )}
       </div>
@@ -290,10 +303,18 @@ export function MandatePanel({ selectedAsset, selectedSymbol, decimals }) {
           <Field label={`Minimum size (${selectedSymbol})`}>
             <input value={minPrincipal} onChange={(e) => setMinPrincipal(e.target.value)} style={inputStyle} />
           </Field>
-          <Field label={`Maximum size (${selectedSymbol})`}>
+          <Field label={`Maximum per loan (${selectedSymbol})`}>
             <input value={maxPrincipal} onChange={(e) => setMaxPrincipal(e.target.value)} style={inputStyle} />
           </Field>
+          <Field label={`Total capacity (${selectedSymbol})`}>
+            <input value={totalCapacity} onChange={(e) => setTotalCapacity(e.target.value)} style={inputStyle} />
+          </Field>
         </Row2>
+        <p style={{ fontSize: 11, color: totalBelowMax ? "var(--brick)" : "var(--parch-dim)", margin: "-4px 0 12px", lineHeight: 1.5 }}>
+          {totalBelowMax
+            ? "Total capacity must be at least the maximum per loan."
+            : "The most this mandate lends across all fills. Once it is lent out, the mandate stops filling."}
+        </p>
 
         <Row2>
           <Field label="Shortest term (days)">
@@ -391,7 +412,9 @@ export function MandatePanel({ selectedAsset, selectedSymbol, decimals }) {
 
         <ActionButton
           label="Publish mandate"
-          primary
+          primary={!totalBelowMax}
+          disabled={totalBelowMax || wantedTotal === undefined}
+          disabledReason={totalBelowMax ? "Total capacity is below the maximum per loan." : "Enter a total capacity."}
           loading={busy}
           onClick={publish}
         />
@@ -426,10 +449,16 @@ export function MandatePanel({ selectedAsset, selectedSymbol, decimals }) {
                     {formatTokenAmount(m.minPrincipal, decimals)}–{formatTokenAmount(m.maxPrincipal, decimals)} {m.symbol}
                     {" · "}{m.minTermSeconds / DAY}–{m.maxTermSeconds / DAY}d{" · "}{m.maxTierLabel}
                   </p>
+                  <p style={{ fontSize: 11, color: "var(--parch-dim)", margin: "0 0 2px" }}>
+                    lent {formatTokenAmount(m.filled, decimals)} of {formatTokenAmount(m.totalCapacity, decimals)}{" "}
+                    {m.symbol} · {formatTokenAmount(m.remaining, decimals)} remaining
+                  </p>
                   <p style={{ fontSize: 11, color: "var(--parch-dim)", margin: 0 }}>
-                    {m.isLive
-                      ? `fillable now: ${formatTokenAmount(m.fillable, decimals)} ${m.symbol}`
-                      : "no longer live"}
+                    {!m.isLive
+                      ? "no longer live"
+                      : m.remaining === 0n
+                      ? "fully lent — no further fills"
+                      : `fillable now: ${formatTokenAmount(m.fillable, decimals)} ${m.symbol}`}
                   </p>
                 </div>
                 {m.isLive && (

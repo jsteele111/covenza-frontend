@@ -1,0 +1,1885 @@
+[
+ {
+  "inputs": [
+   {
+    "internalType": "address",
+    "name": "_kycRegistry",
+    "type": "address"
+   },
+   {
+    "internalType": "address",
+    "name": "_assetRegistry",
+    "type": "address"
+   },
+   {
+    "internalType": "address",
+    "name": "_insurancePool",
+    "type": "address"
+   },
+   {
+    "internalType": "address",
+    "name": "_treasury",
+    "type": "address"
+   },
+   {
+    "internalType": "address",
+    "name": "_vaultImplementation",
+    "type": "address"
+   },
+   {
+    "internalType": "uint256",
+    "name": "_timelockDelay",
+    "type": "uint256"
+   }
+  ],
+  "stateMutability": "nonpayable",
+  "type": "constructor"
+ },
+ {
+  "inputs": [],
+  "name": "ERC1167FailedCreateClone",
+  "type": "error"
+ },
+ {
+  "anonymous": false,
+  "inputs": [
+   {
+    "indexed": true,
+    "internalType": "bytes32",
+    "name": "id",
+    "type": "bytes32"
+   }
+  ],
+  "name": "ActionCancelled",
+  "type": "event"
+ },
+ {
+  "anonymous": false,
+  "inputs": [
+   {
+    "indexed": true,
+    "internalType": "bytes32",
+    "name": "id",
+    "type": "bytes32"
+   }
+  ],
+  "name": "ActionExecuted",
+  "type": "event"
+ },
+ {
+  "anonymous": false,
+  "inputs": [
+   {
+    "indexed": true,
+    "internalType": "bytes32",
+    "name": "id",
+    "type": "bytes32"
+   },
+   {
+    "indexed": false,
+    "internalType": "uint256",
+    "name": "executableAt",
+    "type": "uint256"
+   }
+  ],
+  "name": "ActionQueued",
+  "type": "event"
+ },
+ {
+  "anonymous": false,
+  "inputs": [
+   {
+    "indexed": true,
+    "internalType": "address",
+    "name": "lender",
+    "type": "address"
+   },
+   {
+    "indexed": false,
+    "internalType": "uint256",
+    "name": "newNonce",
+    "type": "uint256"
+   }
+  ],
+  "name": "AllMandatesCancelled",
+  "type": "event"
+ },
+ {
+  "anonymous": false,
+  "inputs": [
+   {
+    "indexed": false,
+    "internalType": "uint256",
+    "name": "previousBps",
+    "type": "uint256"
+   },
+   {
+    "indexed": false,
+    "internalType": "uint256",
+    "name": "newBps",
+    "type": "uint256"
+   }
+  ],
+  "name": "InsuranceSkimRateUpdated",
+  "type": "event"
+ },
+ {
+  "anonymous": false,
+  "inputs": [
+   {
+    "indexed": true,
+    "internalType": "uint256",
+    "name": "id",
+    "type": "uint256"
+   },
+   {
+    "indexed": true,
+    "internalType": "address",
+    "name": "lender",
+    "type": "address"
+   }
+  ],
+  "name": "MandateCancelled",
+  "type": "event"
+ },
+ {
+  "anonymous": false,
+  "inputs": [
+   {
+    "indexed": true,
+    "internalType": "uint256",
+    "name": "id",
+    "type": "uint256"
+   },
+   {
+    "indexed": true,
+    "internalType": "address",
+    "name": "lender",
+    "type": "address"
+   },
+   {
+    "indexed": true,
+    "internalType": "address",
+    "name": "borrower",
+    "type": "address"
+   },
+   {
+    "indexed": false,
+    "internalType": "address",
+    "name": "vault",
+    "type": "address"
+   },
+   {
+    "indexed": false,
+    "internalType": "uint256",
+    "name": "principal",
+    "type": "uint256"
+   },
+   {
+    "indexed": false,
+    "internalType": "uint256",
+    "name": "aprBps",
+    "type": "uint256"
+   }
+  ],
+  "name": "MandateFilled",
+  "type": "event"
+ },
+ {
+  "anonymous": false,
+  "inputs": [
+   {
+    "indexed": true,
+    "internalType": "uint256",
+    "name": "id",
+    "type": "uint256"
+   },
+   {
+    "indexed": true,
+    "internalType": "address",
+    "name": "lender",
+    "type": "address"
+   },
+   {
+    "indexed": true,
+    "internalType": "address",
+    "name": "asset",
+    "type": "address"
+   },
+   {
+    "indexed": false,
+    "internalType": "uint256",
+    "name": "maxPrincipal",
+    "type": "uint256"
+   },
+   {
+    "indexed": false,
+    "internalType": "uint256",
+    "name": "expiry",
+    "type": "uint256"
+   },
+   {
+    "indexed": false,
+    "internalType": "uint8",
+    "name": "maxTier",
+    "type": "uint8"
+   }
+  ],
+  "name": "MandatePublished",
+  "type": "event"
+ },
+ {
+  "anonymous": false,
+  "inputs": [
+   {
+    "indexed": false,
+    "internalType": "uint256",
+    "name": "previous",
+    "type": "uint256"
+   },
+   {
+    "indexed": false,
+    "internalType": "uint256",
+    "name": "newValue",
+    "type": "uint256"
+   }
+  ],
+  "name": "MaxMandateDurationUpdated",
+  "type": "event"
+ },
+ {
+  "anonymous": false,
+  "inputs": [
+   {
+    "indexed": false,
+    "internalType": "uint256",
+    "name": "previousBps",
+    "type": "uint256"
+   },
+   {
+    "indexed": false,
+    "internalType": "uint256",
+    "name": "newBps",
+    "type": "uint256"
+   }
+  ],
+  "name": "MinimumFeeUpdated",
+  "type": "event"
+ },
+ {
+  "anonymous": false,
+  "inputs": [
+   {
+    "indexed": true,
+    "internalType": "address",
+    "name": "from",
+    "type": "address"
+   },
+   {
+    "indexed": true,
+    "internalType": "address",
+    "name": "to",
+    "type": "address"
+   }
+  ],
+  "name": "OwnershipTransferStarted",
+  "type": "event"
+ },
+ {
+  "anonymous": false,
+  "inputs": [
+   {
+    "indexed": true,
+    "internalType": "address",
+    "name": "from",
+    "type": "address"
+   },
+   {
+    "indexed": true,
+    "internalType": "address",
+    "name": "to",
+    "type": "address"
+   }
+  ],
+  "name": "OwnershipTransferred",
+  "type": "event"
+ },
+ {
+  "anonymous": false,
+  "inputs": [
+   {
+    "indexed": false,
+    "internalType": "uint256",
+    "name": "previousBps",
+    "type": "uint256"
+   },
+   {
+    "indexed": false,
+    "internalType": "uint256",
+    "name": "newBps",
+    "type": "uint256"
+   }
+  ],
+  "name": "ProtocolFeeRateUpdated",
+  "type": "event"
+ },
+ {
+  "anonymous": false,
+  "inputs": [
+   {
+    "indexed": true,
+    "internalType": "address",
+    "name": "referrer",
+    "type": "address"
+   },
+   {
+    "indexed": false,
+    "internalType": "bool",
+    "name": "approved",
+    "type": "bool"
+   }
+  ],
+  "name": "ReferrerApprovalUpdated",
+  "type": "event"
+ },
+ {
+  "anonymous": false,
+  "inputs": [
+   {
+    "indexed": false,
+    "internalType": "uint256",
+    "name": "previousBps",
+    "type": "uint256"
+   },
+   {
+    "indexed": false,
+    "internalType": "uint256",
+    "name": "newBps",
+    "type": "uint256"
+   }
+  ],
+  "name": "ReferrerShareUpdated",
+  "type": "event"
+ },
+ {
+  "anonymous": false,
+  "inputs": [
+   {
+    "indexed": false,
+    "internalType": "address",
+    "name": "kycRegistry",
+    "type": "address"
+   },
+   {
+    "indexed": false,
+    "internalType": "address",
+    "name": "assetRegistry",
+    "type": "address"
+   },
+   {
+    "indexed": false,
+    "internalType": "address",
+    "name": "insurancePool",
+    "type": "address"
+   }
+  ],
+  "name": "RegistriesUpdated",
+  "type": "event"
+ },
+ {
+  "anonymous": false,
+  "inputs": [
+   {
+    "indexed": false,
+    "internalType": "uint256",
+    "name": "borrowerClaims",
+    "type": "uint256"
+   },
+   {
+    "indexed": false,
+    "internalType": "uint256",
+    "name": "lenderClaims",
+    "type": "uint256"
+   }
+  ],
+  "name": "RequiredClaimsUpdated",
+  "type": "event"
+ },
+ {
+  "anonymous": false,
+  "inputs": [
+   {
+    "indexed": true,
+    "internalType": "address",
+    "name": "previousTreasury",
+    "type": "address"
+   },
+   {
+    "indexed": true,
+    "internalType": "address",
+    "name": "newTreasury",
+    "type": "address"
+   }
+  ],
+  "name": "TreasuryUpdated",
+  "type": "event"
+ },
+ {
+  "anonymous": false,
+  "inputs": [
+   {
+    "indexed": true,
+    "internalType": "address",
+    "name": "vault",
+    "type": "address"
+   },
+   {
+    "indexed": true,
+    "internalType": "address",
+    "name": "lender",
+    "type": "address"
+   },
+   {
+    "indexed": true,
+    "internalType": "address",
+    "name": "borrower",
+    "type": "address"
+   },
+   {
+    "indexed": false,
+    "internalType": "address",
+    "name": "asset",
+    "type": "address"
+   },
+   {
+    "indexed": false,
+    "internalType": "uint256",
+    "name": "principal",
+    "type": "uint256"
+   },
+   {
+    "indexed": false,
+    "internalType": "uint256",
+    "name": "depositRequired",
+    "type": "uint256"
+   },
+   {
+    "indexed": false,
+    "internalType": "uint256",
+    "name": "aprBps",
+    "type": "uint256"
+   },
+   {
+    "indexed": false,
+    "internalType": "uint256",
+    "name": "insuranceSkim",
+    "type": "uint256"
+   },
+   {
+    "indexed": false,
+    "internalType": "uint256",
+    "name": "deadline",
+    "type": "uint256"
+   }
+  ],
+  "name": "VaultDeployed",
+  "type": "event"
+ },
+ {
+  "inputs": [],
+  "name": "EXECUTION_WINDOW",
+  "outputs": [
+   {
+    "internalType": "uint256",
+    "name": "",
+    "type": "uint256"
+   }
+  ],
+  "stateMutability": "view",
+  "type": "function"
+ },
+ {
+  "inputs": [],
+  "name": "MAX_MINIMUM_FEE_BPS",
+  "outputs": [
+   {
+    "internalType": "uint256",
+    "name": "",
+    "type": "uint256"
+   }
+  ],
+  "stateMutability": "view",
+  "type": "function"
+ },
+ {
+  "inputs": [],
+  "name": "MAX_PROTOCOL_FEE_RATE_BPS",
+  "outputs": [
+   {
+    "internalType": "uint256",
+    "name": "",
+    "type": "uint256"
+   }
+  ],
+  "stateMutability": "view",
+  "type": "function"
+ },
+ {
+  "inputs": [],
+  "name": "MAX_REFERRER_SHARE_BPS",
+  "outputs": [
+   {
+    "internalType": "uint256",
+    "name": "",
+    "type": "uint256"
+   }
+  ],
+  "stateMutability": "view",
+  "type": "function"
+ },
+ {
+  "inputs": [],
+  "name": "acceptOwnership",
+  "outputs": [],
+  "stateMutability": "nonpayable",
+  "type": "function"
+ },
+ {
+  "inputs": [
+   {
+    "internalType": "uint256",
+    "name": "",
+    "type": "uint256"
+   }
+  ],
+  "name": "allVaults",
+  "outputs": [
+   {
+    "internalType": "address",
+    "name": "",
+    "type": "address"
+   }
+  ],
+  "stateMutability": "view",
+  "type": "function"
+ },
+ {
+  "inputs": [
+   {
+    "internalType": "address",
+    "name": "",
+    "type": "address"
+   }
+  ],
+  "name": "approvedReferrer",
+  "outputs": [
+   {
+    "internalType": "bool",
+    "name": "",
+    "type": "bool"
+   }
+  ],
+  "stateMutability": "view",
+  "type": "function"
+ },
+ {
+  "inputs": [],
+  "name": "assetRegistry",
+  "outputs": [
+   {
+    "internalType": "contract AssetRegistry",
+    "name": "",
+    "type": "address"
+   }
+  ],
+  "stateMutability": "view",
+  "type": "function"
+ },
+ {
+  "inputs": [
+   {
+    "internalType": "uint256",
+    "name": "id",
+    "type": "uint256"
+   },
+   {
+    "internalType": "uint256",
+    "name": "termSeconds",
+    "type": "uint256"
+   }
+  ],
+  "name": "bindingDepositBps",
+  "outputs": [
+   {
+    "internalType": "uint256",
+    "name": "",
+    "type": "uint256"
+   }
+  ],
+  "stateMutability": "view",
+  "type": "function"
+ },
+ {
+  "inputs": [
+   {
+    "internalType": "bytes32",
+    "name": "_id",
+    "type": "bytes32"
+   }
+  ],
+  "name": "cancelAction",
+  "outputs": [],
+  "stateMutability": "nonpayable",
+  "type": "function"
+ },
+ {
+  "inputs": [],
+  "name": "cancelAllMandates",
+  "outputs": [],
+  "stateMutability": "nonpayable",
+  "type": "function"
+ },
+ {
+  "inputs": [
+   {
+    "internalType": "uint256",
+    "name": "id",
+    "type": "uint256"
+   }
+  ],
+  "name": "cancelMandate",
+  "outputs": [],
+  "stateMutability": "nonpayable",
+  "type": "function"
+ },
+ {
+  "inputs": [],
+  "name": "cancelOwnershipTransfer",
+  "outputs": [],
+  "stateMutability": "nonpayable",
+  "type": "function"
+ },
+ {
+  "inputs": [
+   {
+    "internalType": "address",
+    "name": "_kycRegistry",
+    "type": "address"
+   },
+   {
+    "internalType": "address",
+    "name": "_assetRegistry",
+    "type": "address"
+   },
+   {
+    "internalType": "address",
+    "name": "_insurancePool",
+    "type": "address"
+   }
+  ],
+  "name": "cancelSetRegistries",
+  "outputs": [],
+  "stateMutability": "nonpayable",
+  "type": "function"
+ },
+ {
+  "inputs": [
+   {
+    "internalType": "address",
+    "name": "_asset",
+    "type": "address"
+   },
+   {
+    "internalType": "address",
+    "name": "_borrower",
+    "type": "address"
+   },
+   {
+    "internalType": "uint256",
+    "name": "_principal",
+    "type": "uint256"
+   },
+   {
+    "internalType": "uint256",
+    "name": "_aprBps",
+    "type": "uint256"
+   },
+   {
+    "internalType": "uint256",
+    "name": "_duration",
+    "type": "uint256"
+   },
+   {
+    "internalType": "bool",
+    "name": "_useSeconds",
+    "type": "bool"
+   },
+   {
+    "internalType": "uint256",
+    "name": "_depositAmount",
+    "type": "uint256"
+   },
+   {
+    "internalType": "address",
+    "name": "_referrer",
+    "type": "address"
+   }
+  ],
+  "name": "deployVault",
+  "outputs": [
+   {
+    "internalType": "address",
+    "name": "",
+    "type": "address"
+   }
+  ],
+  "stateMutability": "nonpayable",
+  "type": "function"
+ },
+ {
+  "inputs": [
+   {
+    "internalType": "address",
+    "name": "_asset",
+    "type": "address"
+   },
+   {
+    "internalType": "address",
+    "name": "_borrower",
+    "type": "address"
+   },
+   {
+    "internalType": "uint256",
+    "name": "_principal",
+    "type": "uint256"
+   },
+   {
+    "internalType": "uint256",
+    "name": "_aprBps",
+    "type": "uint256"
+   },
+   {
+    "internalType": "uint256",
+    "name": "_duration",
+    "type": "uint256"
+   },
+   {
+    "internalType": "bool",
+    "name": "_useSeconds",
+    "type": "bool"
+   },
+   {
+    "internalType": "uint256",
+    "name": "_depositAmount",
+    "type": "uint256"
+   },
+   {
+    "internalType": "address",
+    "name": "_referrer",
+    "type": "address"
+   },
+   {
+    "internalType": "uint8",
+    "name": "_maxTier",
+    "type": "uint8"
+   }
+  ],
+  "name": "deployVaultWithTier",
+  "outputs": [
+   {
+    "internalType": "address",
+    "name": "",
+    "type": "address"
+   }
+  ],
+  "stateMutability": "nonpayable",
+  "type": "function"
+ },
+ {
+  "inputs": [
+   {
+    "internalType": "bytes32",
+    "name": "_id",
+    "type": "bytes32"
+   }
+  ],
+  "name": "executionDeadline",
+  "outputs": [
+   {
+    "internalType": "uint256",
+    "name": "",
+    "type": "uint256"
+   }
+  ],
+  "stateMutability": "view",
+  "type": "function"
+ },
+ {
+  "inputs": [
+   {
+    "internalType": "uint256",
+    "name": "id",
+    "type": "uint256"
+   },
+   {
+    "internalType": "uint256",
+    "name": "principal",
+    "type": "uint256"
+   },
+   {
+    "internalType": "uint256",
+    "name": "duration",
+    "type": "uint256"
+   },
+   {
+    "internalType": "bool",
+    "name": "useSeconds",
+    "type": "bool"
+   },
+   {
+    "internalType": "uint256",
+    "name": "deposit",
+    "type": "uint256"
+   },
+   {
+    "internalType": "uint256",
+    "name": "maxAprBps",
+    "type": "uint256"
+   }
+  ],
+  "name": "fillMandate",
+  "outputs": [
+   {
+    "internalType": "address",
+    "name": "vaultAddress",
+    "type": "address"
+   }
+  ],
+  "stateMutability": "nonpayable",
+  "type": "function"
+ },
+ {
+  "inputs": [
+   {
+    "internalType": "address",
+    "name": "_borrower",
+    "type": "address"
+   }
+  ],
+  "name": "getVaultsByBorrower",
+  "outputs": [
+   {
+    "internalType": "address[]",
+    "name": "",
+    "type": "address[]"
+   }
+  ],
+  "stateMutability": "view",
+  "type": "function"
+ },
+ {
+  "inputs": [
+   {
+    "internalType": "address",
+    "name": "_lender",
+    "type": "address"
+   }
+  ],
+  "name": "getVaultsByLender",
+  "outputs": [
+   {
+    "internalType": "address[]",
+    "name": "",
+    "type": "address[]"
+   }
+  ],
+  "stateMutability": "view",
+  "type": "function"
+ },
+ {
+  "inputs": [],
+  "name": "insurancePool",
+  "outputs": [
+   {
+    "internalType": "contract InsurancePool",
+    "name": "",
+    "type": "address"
+   }
+  ],
+  "stateMutability": "view",
+  "type": "function"
+ },
+ {
+  "inputs": [],
+  "name": "insuranceSkimRateBps",
+  "outputs": [
+   {
+    "internalType": "uint256",
+    "name": "",
+    "type": "uint256"
+   }
+  ],
+  "stateMutability": "view",
+  "type": "function"
+ },
+ {
+  "inputs": [
+   {
+    "internalType": "bytes32",
+    "name": "_id",
+    "type": "bytes32"
+   }
+  ],
+  "name": "isExecutable",
+  "outputs": [
+   {
+    "internalType": "bool",
+    "name": "",
+    "type": "bool"
+   }
+  ],
+  "stateMutability": "view",
+  "type": "function"
+ },
+ {
+  "inputs": [
+   {
+    "internalType": "uint256",
+    "name": "id",
+    "type": "uint256"
+   }
+  ],
+  "name": "isMandateLive",
+  "outputs": [
+   {
+    "internalType": "bool",
+    "name": "",
+    "type": "bool"
+   }
+  ],
+  "stateMutability": "view",
+  "type": "function"
+ },
+ {
+  "inputs": [],
+  "name": "kycRegistry",
+  "outputs": [
+   {
+    "internalType": "contract IIdentityAdapter",
+    "name": "",
+    "type": "address"
+   }
+  ],
+  "stateMutability": "view",
+  "type": "function"
+ },
+ {
+  "inputs": [
+   {
+    "internalType": "address",
+    "name": "",
+    "type": "address"
+   }
+  ],
+  "name": "lenderNonce",
+  "outputs": [
+   {
+    "internalType": "uint256",
+    "name": "",
+    "type": "uint256"
+   }
+  ],
+  "stateMutability": "view",
+  "type": "function"
+ },
+ {
+  "inputs": [
+   {
+    "internalType": "uint256",
+    "name": "id",
+    "type": "uint256"
+   }
+  ],
+  "name": "mandate",
+  "outputs": [
+   {
+    "components": [
+     {
+      "internalType": "address",
+      "name": "lender",
+      "type": "address"
+     },
+     {
+      "internalType": "address",
+      "name": "asset",
+      "type": "address"
+     },
+     {
+      "internalType": "uint256",
+      "name": "minPrincipal",
+      "type": "uint256"
+     },
+     {
+      "internalType": "uint256",
+      "name": "maxPrincipal",
+      "type": "uint256"
+     },
+     {
+      "internalType": "uint256",
+      "name": "minTermSeconds",
+      "type": "uint256"
+     },
+     {
+      "internalType": "uint256",
+      "name": "maxTermSeconds",
+      "type": "uint256"
+     },
+     {
+      "internalType": "uint256",
+      "name": "expiry",
+      "type": "uint256"
+     },
+     {
+      "internalType": "uint256",
+      "name": "nonce",
+      "type": "uint256"
+     },
+     {
+      "internalType": "uint8",
+      "name": "maxTier",
+      "type": "uint8"
+     },
+     {
+      "internalType": "bool",
+      "name": "cancelled",
+      "type": "bool"
+     },
+     {
+      "internalType": "address",
+      "name": "permittedBorrower",
+      "type": "address"
+     },
+     {
+      "internalType": "uint256",
+      "name": "baseAprBps",
+      "type": "uint256"
+     },
+     {
+      "internalType": "uint256",
+      "name": "termPremiumBpsPerDay",
+      "type": "uint256"
+     },
+     {
+      "internalType": "uint256",
+      "name": "depositCreditBpsPerPoint",
+      "type": "uint256"
+     },
+     {
+      "internalType": "uint256",
+      "name": "minDepositBps",
+      "type": "uint256"
+     },
+     {
+      "internalType": "uint256",
+      "name": "minAprBps",
+      "type": "uint256"
+     },
+     {
+      "internalType": "uint256",
+      "name": "totalCapacity",
+      "type": "uint256"
+     },
+     {
+      "internalType": "uint256",
+      "name": "filled",
+      "type": "uint256"
+     }
+    ],
+    "internalType": "struct VaultFactory.Mandate",
+    "name": "",
+    "type": "tuple"
+   }
+  ],
+  "stateMutability": "view",
+  "type": "function"
+ },
+ {
+  "inputs": [
+   {
+    "internalType": "uint256",
+    "name": "id",
+    "type": "uint256"
+   }
+  ],
+  "name": "mandateRemaining",
+  "outputs": [
+   {
+    "internalType": "uint256",
+    "name": "",
+    "type": "uint256"
+   }
+  ],
+  "stateMutability": "view",
+  "type": "function"
+ },
+ {
+  "inputs": [],
+  "name": "maxMandateDuration",
+  "outputs": [
+   {
+    "internalType": "uint256",
+    "name": "",
+    "type": "uint256"
+   }
+  ],
+  "stateMutability": "view",
+  "type": "function"
+ },
+ {
+  "inputs": [],
+  "name": "minimumFeeBps",
+  "outputs": [
+   {
+    "internalType": "uint256",
+    "name": "",
+    "type": "uint256"
+   }
+  ],
+  "stateMutability": "view",
+  "type": "function"
+ },
+ {
+  "inputs": [],
+  "name": "owner",
+  "outputs": [
+   {
+    "internalType": "address",
+    "name": "",
+    "type": "address"
+   }
+  ],
+  "stateMutability": "view",
+  "type": "function"
+ },
+ {
+  "inputs": [],
+  "name": "pendingOwner",
+  "outputs": [
+   {
+    "internalType": "address",
+    "name": "",
+    "type": "address"
+   }
+  ],
+  "stateMutability": "view",
+  "type": "function"
+ },
+ {
+  "inputs": [],
+  "name": "protocolFeeRateBps",
+  "outputs": [
+   {
+    "internalType": "uint256",
+    "name": "",
+    "type": "uint256"
+   }
+  ],
+  "stateMutability": "view",
+  "type": "function"
+ },
+ {
+  "inputs": [
+   {
+    "components": [
+     {
+      "internalType": "address",
+      "name": "asset",
+      "type": "address"
+     },
+     {
+      "internalType": "uint256",
+      "name": "minPrincipal",
+      "type": "uint256"
+     },
+     {
+      "internalType": "uint256",
+      "name": "maxPrincipal",
+      "type": "uint256"
+     },
+     {
+      "internalType": "uint256",
+      "name": "minTermSeconds",
+      "type": "uint256"
+     },
+     {
+      "internalType": "uint256",
+      "name": "maxTermSeconds",
+      "type": "uint256"
+     },
+     {
+      "internalType": "uint256",
+      "name": "validForSeconds",
+      "type": "uint256"
+     },
+     {
+      "internalType": "uint8",
+      "name": "maxTier",
+      "type": "uint8"
+     },
+     {
+      "internalType": "address",
+      "name": "permittedBorrower",
+      "type": "address"
+     },
+     {
+      "internalType": "uint256",
+      "name": "baseAprBps",
+      "type": "uint256"
+     },
+     {
+      "internalType": "uint256",
+      "name": "termPremiumBpsPerDay",
+      "type": "uint256"
+     },
+     {
+      "internalType": "uint256",
+      "name": "depositCreditBpsPerPoint",
+      "type": "uint256"
+     },
+     {
+      "internalType": "uint256",
+      "name": "minDepositBps",
+      "type": "uint256"
+     },
+     {
+      "internalType": "uint256",
+      "name": "minAprBps",
+      "type": "uint256"
+     },
+     {
+      "internalType": "uint256",
+      "name": "totalCapacity",
+      "type": "uint256"
+     }
+    ],
+    "internalType": "struct VaultFactory.MandateTerms",
+    "name": "t",
+    "type": "tuple"
+   }
+  ],
+  "name": "publishMandate",
+  "outputs": [
+   {
+    "internalType": "uint256",
+    "name": "id",
+    "type": "uint256"
+   }
+  ],
+  "stateMutability": "nonpayable",
+  "type": "function"
+ },
+ {
+  "inputs": [
+   {
+    "internalType": "bytes32",
+    "name": "_id",
+    "type": "bytes32"
+   }
+  ],
+  "name": "queueAction",
+  "outputs": [],
+  "stateMutability": "nonpayable",
+  "type": "function"
+ },
+ {
+  "inputs": [
+   {
+    "internalType": "address",
+    "name": "_kycRegistry",
+    "type": "address"
+   },
+   {
+    "internalType": "address",
+    "name": "_assetRegistry",
+    "type": "address"
+   },
+   {
+    "internalType": "address",
+    "name": "_insurancePool",
+    "type": "address"
+   }
+  ],
+  "name": "queueSetRegistries",
+  "outputs": [],
+  "stateMutability": "nonpayable",
+  "type": "function"
+ },
+ {
+  "inputs": [
+   {
+    "internalType": "bytes32",
+    "name": "",
+    "type": "bytes32"
+   }
+  ],
+  "name": "queuedAt",
+  "outputs": [
+   {
+    "internalType": "uint256",
+    "name": "",
+    "type": "uint256"
+   }
+  ],
+  "stateMutability": "view",
+  "type": "function"
+ },
+ {
+  "inputs": [
+   {
+    "internalType": "uint256",
+    "name": "id",
+    "type": "uint256"
+   },
+   {
+    "internalType": "uint256",
+    "name": "principal",
+    "type": "uint256"
+   },
+   {
+    "internalType": "uint256",
+    "name": "duration",
+    "type": "uint256"
+   },
+   {
+    "internalType": "bool",
+    "name": "useSeconds",
+    "type": "bool"
+   },
+   {
+    "internalType": "uint256",
+    "name": "deposit",
+    "type": "uint256"
+   }
+  ],
+  "name": "quoteFillCost",
+  "outputs": [
+   {
+    "internalType": "uint256",
+    "name": "depositOwed",
+    "type": "uint256"
+   },
+   {
+    "internalType": "uint256",
+    "name": "premiumOwed",
+    "type": "uint256"
+   }
+  ],
+  "stateMutability": "view",
+  "type": "function"
+ },
+ {
+  "inputs": [
+   {
+    "internalType": "uint256",
+    "name": "_principal",
+    "type": "uint256"
+   },
+   {
+    "internalType": "uint256",
+    "name": "_aprBps",
+    "type": "uint256"
+   },
+   {
+    "internalType": "uint256",
+    "name": "_duration",
+    "type": "uint256"
+   },
+   {
+    "internalType": "bool",
+    "name": "_useSeconds",
+    "type": "bool"
+   }
+  ],
+  "name": "quoteFullTermFee",
+  "outputs": [
+   {
+    "internalType": "uint256",
+    "name": "",
+    "type": "uint256"
+   }
+  ],
+  "stateMutability": "pure",
+  "type": "function"
+ },
+ {
+  "inputs": [
+   {
+    "internalType": "uint256",
+    "name": "_principal",
+    "type": "uint256"
+   },
+   {
+    "internalType": "uint256",
+    "name": "_aprBps",
+    "type": "uint256"
+   },
+   {
+    "internalType": "uint256",
+    "name": "_duration",
+    "type": "uint256"
+   },
+   {
+    "internalType": "bool",
+    "name": "_useSeconds",
+    "type": "bool"
+   }
+  ],
+  "name": "quoteInsuranceSkim",
+  "outputs": [
+   {
+    "internalType": "uint256",
+    "name": "",
+    "type": "uint256"
+   }
+  ],
+  "stateMutability": "view",
+  "type": "function"
+ },
+ {
+  "inputs": [
+   {
+    "internalType": "uint256",
+    "name": "id",
+    "type": "uint256"
+   },
+   {
+    "internalType": "uint256",
+    "name": "termSeconds",
+    "type": "uint256"
+   },
+   {
+    "internalType": "uint256",
+    "name": "depositBps",
+    "type": "uint256"
+   }
+  ],
+  "name": "quoteMandateApr",
+  "outputs": [
+   {
+    "internalType": "uint256",
+    "name": "",
+    "type": "uint256"
+   }
+  ],
+  "stateMutability": "view",
+  "type": "function"
+ },
+ {
+  "inputs": [
+   {
+    "internalType": "uint256",
+    "name": "id",
+    "type": "uint256"
+   }
+  ],
+  "name": "quoteMandateFillable",
+  "outputs": [
+   {
+    "internalType": "uint256",
+    "name": "",
+    "type": "uint256"
+   }
+  ],
+  "stateMutability": "view",
+  "type": "function"
+ },
+ {
+  "inputs": [
+   {
+    "internalType": "uint256",
+    "name": "_principal",
+    "type": "uint256"
+   },
+   {
+    "internalType": "uint8",
+    "name": "_maxTier",
+    "type": "uint8"
+   },
+   {
+    "internalType": "uint256",
+    "name": "_duration",
+    "type": "uint256"
+   },
+   {
+    "internalType": "bool",
+    "name": "_useSeconds",
+    "type": "bool"
+   }
+  ],
+  "name": "quoteMinimumDeposit",
+  "outputs": [
+   {
+    "internalType": "uint256",
+    "name": "",
+    "type": "uint256"
+   }
+  ],
+  "stateMutability": "view",
+  "type": "function"
+ },
+ {
+  "inputs": [
+   {
+    "internalType": "uint256",
+    "name": "_principal",
+    "type": "uint256"
+   },
+   {
+    "internalType": "uint256",
+    "name": "_aprBps",
+    "type": "uint256"
+   },
+   {
+    "internalType": "uint256",
+    "name": "_duration",
+    "type": "uint256"
+   },
+   {
+    "internalType": "bool",
+    "name": "_useSeconds",
+    "type": "bool"
+   }
+  ],
+  "name": "quoteProtocolFee",
+  "outputs": [
+   {
+    "internalType": "uint256",
+    "name": "",
+    "type": "uint256"
+   }
+  ],
+  "stateMutability": "view",
+  "type": "function"
+ },
+ {
+  "inputs": [],
+  "name": "referrerShareBps",
+  "outputs": [
+   {
+    "internalType": "uint256",
+    "name": "",
+    "type": "uint256"
+   }
+  ],
+  "stateMutability": "view",
+  "type": "function"
+ },
+ {
+  "inputs": [],
+  "name": "requiredBorrowerClaims",
+  "outputs": [
+   {
+    "internalType": "uint256",
+    "name": "",
+    "type": "uint256"
+   }
+  ],
+  "stateMutability": "view",
+  "type": "function"
+ },
+ {
+  "inputs": [],
+  "name": "requiredLenderClaims",
+  "outputs": [
+   {
+    "internalType": "uint256",
+    "name": "",
+    "type": "uint256"
+   }
+  ],
+  "stateMutability": "view",
+  "type": "function"
+ },
+ {
+  "inputs": [
+   {
+    "internalType": "uint256",
+    "name": "_newBps",
+    "type": "uint256"
+   }
+  ],
+  "name": "setInsuranceSkimRateBps",
+  "outputs": [],
+  "stateMutability": "nonpayable",
+  "type": "function"
+ },
+ {
+  "inputs": [
+   {
+    "internalType": "uint256",
+    "name": "_seconds",
+    "type": "uint256"
+   }
+  ],
+  "name": "setMaxMandateDuration",
+  "outputs": [],
+  "stateMutability": "nonpayable",
+  "type": "function"
+ },
+ {
+  "inputs": [
+   {
+    "internalType": "uint256",
+    "name": "_newBps",
+    "type": "uint256"
+   }
+  ],
+  "name": "setMinimumFeeBps",
+  "outputs": [],
+  "stateMutability": "nonpayable",
+  "type": "function"
+ },
+ {
+  "inputs": [
+   {
+    "internalType": "uint256",
+    "name": "_newBps",
+    "type": "uint256"
+   }
+  ],
+  "name": "setProtocolFeeRateBps",
+  "outputs": [],
+  "stateMutability": "nonpayable",
+  "type": "function"
+ },
+ {
+  "inputs": [
+   {
+    "internalType": "address",
+    "name": "_referrer",
+    "type": "address"
+   },
+   {
+    "internalType": "bool",
+    "name": "_approved",
+    "type": "bool"
+   }
+  ],
+  "name": "setReferrerApproved",
+  "outputs": [],
+  "stateMutability": "nonpayable",
+  "type": "function"
+ },
+ {
+  "inputs": [
+   {
+    "internalType": "uint256",
+    "name": "_newBps",
+    "type": "uint256"
+   }
+  ],
+  "name": "setReferrerShareBps",
+  "outputs": [],
+  "stateMutability": "nonpayable",
+  "type": "function"
+ },
+ {
+  "inputs": [
+   {
+    "internalType": "address",
+    "name": "_kycRegistry",
+    "type": "address"
+   },
+   {
+    "internalType": "address",
+    "name": "_assetRegistry",
+    "type": "address"
+   },
+   {
+    "internalType": "address",
+    "name": "_insurancePool",
+    "type": "address"
+   }
+  ],
+  "name": "setRegistries",
+  "outputs": [],
+  "stateMutability": "nonpayable",
+  "type": "function"
+ },
+ {
+  "inputs": [
+   {
+    "internalType": "uint256",
+    "name": "_borrowerClaims",
+    "type": "uint256"
+   },
+   {
+    "internalType": "uint256",
+    "name": "_lenderClaims",
+    "type": "uint256"
+   }
+  ],
+  "name": "setRequiredClaims",
+  "outputs": [],
+  "stateMutability": "nonpayable",
+  "type": "function"
+ },
+ {
+  "inputs": [
+   {
+    "internalType": "address",
+    "name": "_newTreasury",
+    "type": "address"
+   }
+  ],
+  "name": "setTreasury",
+  "outputs": [],
+  "stateMutability": "nonpayable",
+  "type": "function"
+ },
+ {
+  "inputs": [
+   {
+    "internalType": "bytes32",
+    "name": "_id",
+    "type": "bytes32"
+   }
+  ],
+  "name": "timeUntilExecutable",
+  "outputs": [
+   {
+    "internalType": "uint256",
+    "name": "",
+    "type": "uint256"
+   }
+  ],
+  "stateMutability": "view",
+  "type": "function"
+ },
+ {
+  "inputs": [],
+  "name": "timelockDelay",
+  "outputs": [
+   {
+    "internalType": "uint256",
+    "name": "",
+    "type": "uint256"
+   }
+  ],
+  "stateMutability": "view",
+  "type": "function"
+ },
+ {
+  "inputs": [],
+  "name": "totalMandates",
+  "outputs": [
+   {
+    "internalType": "uint256",
+    "name": "",
+    "type": "uint256"
+   }
+  ],
+  "stateMutability": "view",
+  "type": "function"
+ },
+ {
+  "inputs": [],
+  "name": "totalVaults",
+  "outputs": [
+   {
+    "internalType": "uint256",
+    "name": "",
+    "type": "uint256"
+   }
+  ],
+  "stateMutability": "view",
+  "type": "function"
+ },
+ {
+  "inputs": [
+   {
+    "internalType": "address",
+    "name": "_newOwner",
+    "type": "address"
+   }
+  ],
+  "name": "transferOwnership",
+  "outputs": [],
+  "stateMutability": "nonpayable",
+  "type": "function"
+ },
+ {
+  "inputs": [],
+  "name": "treasury",
+  "outputs": [
+   {
+    "internalType": "address",
+    "name": "",
+    "type": "address"
+   }
+  ],
+  "stateMutability": "view",
+  "type": "function"
+ },
+ {
+  "inputs": [],
+  "name": "vaultImplementation",
+  "outputs": [
+   {
+    "internalType": "address",
+    "name": "",
+    "type": "address"
+   }
+  ],
+  "stateMutability": "view",
+  "type": "function"
+ },
+ {
+  "inputs": [
+   {
+    "internalType": "address",
+    "name": "",
+    "type": "address"
+   },
+   {
+    "internalType": "uint256",
+    "name": "",
+    "type": "uint256"
+   }
+  ],
+  "name": "vaultsByBorrower",
+  "outputs": [
+   {
+    "internalType": "address",
+    "name": "",
+    "type": "address"
+   }
+  ],
+  "stateMutability": "view",
+  "type": "function"
+ },
+ {
+  "inputs": [
+   {
+    "internalType": "address",
+    "name": "",
+    "type": "address"
+   },
+   {
+    "internalType": "uint256",
+    "name": "",
+    "type": "uint256"
+   }
+  ],
+  "name": "vaultsByLender",
+  "outputs": [
+   {
+    "internalType": "address",
+    "name": "",
+    "type": "address"
+   }
+  ],
+  "stateMutability": "view",
+  "type": "function"
+ }
+]

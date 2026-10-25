@@ -1,0 +1,1354 @@
+[
+ {
+  "inputs": [
+   {
+    "internalType": "address",
+    "name": "_operator",
+    "type": "address"
+   },
+   {
+    "internalType": "address",
+    "name": "_swapRouter",
+    "type": "address"
+   },
+   {
+    "internalType": "address",
+    "name": "_uniswapFactory",
+    "type": "address"
+   },
+   {
+    "internalType": "uint256",
+    "name": "_timelockDelay",
+    "type": "uint256"
+   }
+  ],
+  "stateMutability": "nonpayable",
+  "type": "constructor"
+ },
+ {
+  "anonymous": false,
+  "inputs": [
+   {
+    "indexed": true,
+    "internalType": "bytes32",
+    "name": "id",
+    "type": "bytes32"
+   }
+  ],
+  "name": "ActionCancelled",
+  "type": "event"
+ },
+ {
+  "anonymous": false,
+  "inputs": [
+   {
+    "indexed": true,
+    "internalType": "bytes32",
+    "name": "id",
+    "type": "bytes32"
+   }
+  ],
+  "name": "ActionExecuted",
+  "type": "event"
+ },
+ {
+  "anonymous": false,
+  "inputs": [
+   {
+    "indexed": true,
+    "internalType": "bytes32",
+    "name": "id",
+    "type": "bytes32"
+   },
+   {
+    "indexed": false,
+    "internalType": "uint256",
+    "name": "executableAt",
+    "type": "uint256"
+   }
+  ],
+  "name": "ActionQueued",
+  "type": "event"
+ },
+ {
+  "anonymous": false,
+  "inputs": [
+   {
+    "indexed": true,
+    "internalType": "address",
+    "name": "asset",
+    "type": "address"
+   }
+  ],
+  "name": "AssetAdded",
+  "type": "event"
+ },
+ {
+  "anonymous": false,
+  "inputs": [
+   {
+    "indexed": true,
+    "internalType": "address",
+    "name": "asset",
+    "type": "address"
+   }
+  ],
+  "name": "AssetRemoved",
+  "type": "event"
+ },
+ {
+  "anonymous": false,
+  "inputs": [
+   {
+    "indexed": false,
+    "internalType": "uint256",
+    "name": "previousBps",
+    "type": "uint256"
+   },
+   {
+    "indexed": false,
+    "internalType": "uint256",
+    "name": "newBps",
+    "type": "uint256"
+   }
+  ],
+  "name": "DepositCoeffUpdated",
+  "type": "event"
+ },
+ {
+  "anonymous": false,
+  "inputs": [
+   {
+    "indexed": true,
+    "internalType": "address",
+    "name": "asset",
+    "type": "address"
+   },
+   {
+    "indexed": false,
+    "internalType": "uint256",
+    "name": "gracePeriod",
+    "type": "uint256"
+   }
+  ],
+  "name": "GracePeriodUpdated",
+  "type": "event"
+ },
+ {
+  "anonymous": false,
+  "inputs": [
+   {
+    "indexed": false,
+    "internalType": "uint256",
+    "name": "previousBps",
+    "type": "uint256"
+   },
+   {
+    "indexed": false,
+    "internalType": "uint256",
+    "name": "newBps",
+    "type": "uint256"
+   }
+  ],
+  "name": "MaxEntryImpactUpdated",
+  "type": "event"
+ },
+ {
+  "anonymous": false,
+  "inputs": [
+   {
+    "indexed": true,
+    "internalType": "address",
+    "name": "from",
+    "type": "address"
+   },
+   {
+    "indexed": true,
+    "internalType": "address",
+    "name": "to",
+    "type": "address"
+   }
+  ],
+  "name": "OperatorTransferStarted",
+  "type": "event"
+ },
+ {
+  "anonymous": false,
+  "inputs": [
+   {
+    "indexed": true,
+    "internalType": "address",
+    "name": "previousOperator",
+    "type": "address"
+   },
+   {
+    "indexed": true,
+    "internalType": "address",
+    "name": "newOperator",
+    "type": "address"
+   }
+  ],
+  "name": "OperatorUpdated",
+  "type": "event"
+ },
+ {
+  "anonymous": false,
+  "inputs": [
+   {
+    "indexed": false,
+    "internalType": "uint256",
+    "name": "gapThreshold",
+    "type": "uint256"
+   },
+   {
+    "indexed": false,
+    "internalType": "uint256",
+    "name": "recoveryPeriod",
+    "type": "uint256"
+   },
+   {
+    "indexed": false,
+    "internalType": "uint256",
+    "name": "maxGraceExtension",
+    "type": "uint256"
+   }
+  ],
+  "name": "OutageConfigUpdated",
+  "type": "event"
+ },
+ {
+  "anonymous": false,
+  "inputs": [
+   {
+    "indexed": false,
+    "internalType": "uint256",
+    "name": "start",
+    "type": "uint256"
+   },
+   {
+    "indexed": false,
+    "internalType": "uint256",
+    "name": "end",
+    "type": "uint256"
+   }
+  ],
+  "name": "OutageRecorded",
+  "type": "event"
+ },
+ {
+  "anonymous": false,
+  "inputs": [
+   {
+    "indexed": true,
+    "internalType": "address",
+    "name": "tokenA",
+    "type": "address"
+   },
+   {
+    "indexed": true,
+    "internalType": "address",
+    "name": "tokenB",
+    "type": "address"
+   },
+   {
+    "indexed": false,
+    "internalType": "uint24",
+    "name": "fee",
+    "type": "uint24"
+   }
+  ],
+  "name": "PoolFeeTierUpdated",
+  "type": "event"
+ },
+ {
+  "anonymous": false,
+  "inputs": [
+   {
+    "indexed": false,
+    "internalType": "uint32",
+    "name": "twapWindow",
+    "type": "uint32"
+   },
+   {
+    "indexed": false,
+    "internalType": "uint256",
+    "name": "twapToleranceBps",
+    "type": "uint256"
+   },
+   {
+    "indexed": false,
+    "internalType": "uint256",
+    "name": "swapBackGracePeriod",
+    "type": "uint256"
+   },
+   {
+    "indexed": false,
+    "internalType": "uint256",
+    "name": "bountyRatePerHourBps",
+    "type": "uint256"
+   },
+   {
+    "indexed": false,
+    "internalType": "uint256",
+    "name": "bountyCapBps",
+    "type": "uint256"
+   }
+  ],
+  "name": "SettlementConfigUpdated",
+  "type": "event"
+ },
+ {
+  "anonymous": false,
+  "inputs": [
+   {
+    "indexed": true,
+    "internalType": "enum AssetRegistry.RiskTier",
+    "name": "tier",
+    "type": "uint8"
+   },
+   {
+    "indexed": false,
+    "internalType": "uint256",
+    "name": "assumedVolBps",
+    "type": "uint256"
+   },
+   {
+    "indexed": false,
+    "internalType": "uint256",
+    "name": "minDepositBps",
+    "type": "uint256"
+   },
+   {
+    "indexed": false,
+    "internalType": "uint256",
+    "name": "maxTermSeconds",
+    "type": "uint256"
+   },
+   {
+    "indexed": false,
+    "internalType": "uint256",
+    "name": "maxExposureBps",
+    "type": "uint256"
+   },
+   {
+    "indexed": false,
+    "internalType": "uint256",
+    "name": "insurancePremiumBps",
+    "type": "uint256"
+   }
+  ],
+  "name": "TierConfigUpdated",
+  "type": "event"
+ },
+ {
+  "anonymous": false,
+  "inputs": [
+   {
+    "indexed": true,
+    "internalType": "address",
+    "name": "asset",
+    "type": "address"
+   },
+   {
+    "indexed": false,
+    "internalType": "enum AssetRegistry.RiskTier",
+    "name": "tier",
+    "type": "uint8"
+   }
+  ],
+  "name": "TierUpdated",
+  "type": "event"
+ },
+ {
+  "inputs": [],
+  "name": "EXECUTION_WINDOW",
+  "outputs": [
+   {
+    "internalType": "uint256",
+    "name": "",
+    "type": "uint256"
+   }
+  ],
+  "stateMutability": "view",
+  "type": "function"
+ },
+ {
+  "inputs": [],
+  "name": "MAX_GRACE_EXTENSION",
+  "outputs": [
+   {
+    "internalType": "uint256",
+    "name": "",
+    "type": "uint256"
+   }
+  ],
+  "stateMutability": "view",
+  "type": "function"
+ },
+ {
+  "inputs": [],
+  "name": "acceptOperator",
+  "outputs": [],
+  "stateMutability": "nonpayable",
+  "type": "function"
+ },
+ {
+  "inputs": [
+   {
+    "internalType": "address",
+    "name": "_asset",
+    "type": "address"
+   },
+   {
+    "internalType": "uint256",
+    "name": "_gracePeriod",
+    "type": "uint256"
+   }
+  ],
+  "name": "addAsset",
+  "outputs": [],
+  "stateMutability": "nonpayable",
+  "type": "function"
+ },
+ {
+  "inputs": [
+   {
+    "internalType": "address",
+    "name": "_asset",
+    "type": "address"
+   },
+   {
+    "internalType": "uint256",
+    "name": "_gracePeriod",
+    "type": "uint256"
+   },
+   {
+    "internalType": "enum AssetRegistry.RiskTier",
+    "name": "_tier",
+    "type": "uint8"
+   }
+  ],
+  "name": "addAssetWithTier",
+  "outputs": [],
+  "stateMutability": "nonpayable",
+  "type": "function"
+ },
+ {
+  "inputs": [
+   {
+    "internalType": "uint256",
+    "name": "",
+    "type": "uint256"
+   }
+  ],
+  "name": "allAssets",
+  "outputs": [
+   {
+    "internalType": "address",
+    "name": "",
+    "type": "address"
+   }
+  ],
+  "stateMutability": "view",
+  "type": "function"
+ },
+ {
+  "inputs": [
+   {
+    "internalType": "address",
+    "name": "",
+    "type": "address"
+   }
+  ],
+  "name": "assetConfig",
+  "outputs": [
+   {
+    "internalType": "bool",
+    "name": "whitelisted",
+    "type": "bool"
+   },
+   {
+    "internalType": "enum AssetRegistry.RiskTier",
+    "name": "tier",
+    "type": "uint8"
+   },
+   {
+    "internalType": "uint256",
+    "name": "gracePeriod",
+    "type": "uint256"
+   }
+  ],
+  "stateMutability": "view",
+  "type": "function"
+ },
+ {
+  "inputs": [],
+  "name": "bountyCapBps",
+  "outputs": [
+   {
+    "internalType": "uint256",
+    "name": "",
+    "type": "uint256"
+   }
+  ],
+  "stateMutability": "view",
+  "type": "function"
+ },
+ {
+  "inputs": [],
+  "name": "bountyRatePerHourBps",
+  "outputs": [
+   {
+    "internalType": "uint256",
+    "name": "",
+    "type": "uint256"
+   }
+  ],
+  "stateMutability": "view",
+  "type": "function"
+ },
+ {
+  "inputs": [
+   {
+    "internalType": "bytes32",
+    "name": "_id",
+    "type": "bytes32"
+   }
+  ],
+  "name": "cancelAction",
+  "outputs": [],
+  "stateMutability": "nonpayable",
+  "type": "function"
+ },
+ {
+  "inputs": [],
+  "name": "cancelOperatorTransfer",
+  "outputs": [],
+  "stateMutability": "nonpayable",
+  "type": "function"
+ },
+ {
+  "inputs": [],
+  "name": "depositCoeffBps",
+  "outputs": [
+   {
+    "internalType": "uint256",
+    "name": "",
+    "type": "uint256"
+   }
+  ],
+  "stateMutability": "view",
+  "type": "function"
+ },
+ {
+  "inputs": [
+   {
+    "internalType": "bytes32",
+    "name": "_id",
+    "type": "bytes32"
+   }
+  ],
+  "name": "executionDeadline",
+  "outputs": [
+   {
+    "internalType": "uint256",
+    "name": "",
+    "type": "uint256"
+   }
+  ],
+  "stateMutability": "view",
+  "type": "function"
+ },
+ {
+  "inputs": [],
+  "name": "getWhitelistedAssets",
+  "outputs": [
+   {
+    "internalType": "address[]",
+    "name": "",
+    "type": "address[]"
+   }
+  ],
+  "stateMutability": "view",
+  "type": "function"
+ },
+ {
+  "inputs": [
+   {
+    "internalType": "address",
+    "name": "_asset",
+    "type": "address"
+   }
+  ],
+  "name": "gracePeriodOf",
+  "outputs": [
+   {
+    "internalType": "uint256",
+    "name": "",
+    "type": "uint256"
+   }
+  ],
+  "stateMutability": "view",
+  "type": "function"
+ },
+ {
+  "inputs": [],
+  "name": "heartbeat",
+  "outputs": [],
+  "stateMutability": "nonpayable",
+  "type": "function"
+ },
+ {
+  "inputs": [
+   {
+    "internalType": "address",
+    "name": "_asset",
+    "type": "address"
+   },
+   {
+    "internalType": "uint256",
+    "name": "_since",
+    "type": "uint256"
+   }
+  ],
+  "name": "highestTierSince",
+  "outputs": [
+   {
+    "internalType": "enum AssetRegistry.RiskTier",
+    "name": "",
+    "type": "uint8"
+   }
+  ],
+  "stateMutability": "view",
+  "type": "function"
+ },
+ {
+  "inputs": [
+   {
+    "internalType": "enum AssetRegistry.RiskTier",
+    "name": "_tier",
+    "type": "uint8"
+   }
+  ],
+  "name": "insurancePremiumBpsForTier",
+  "outputs": [
+   {
+    "internalType": "uint256",
+    "name": "",
+    "type": "uint256"
+   }
+  ],
+  "stateMutability": "view",
+  "type": "function"
+ },
+ {
+  "inputs": [
+   {
+    "internalType": "bytes32",
+    "name": "_id",
+    "type": "bytes32"
+   }
+  ],
+  "name": "isExecutable",
+  "outputs": [
+   {
+    "internalType": "bool",
+    "name": "",
+    "type": "bool"
+   }
+  ],
+  "stateMutability": "view",
+  "type": "function"
+ },
+ {
+  "inputs": [
+   {
+    "internalType": "address",
+    "name": "_asset",
+    "type": "address"
+   }
+  ],
+  "name": "isWhitelisted",
+  "outputs": [
+   {
+    "internalType": "bool",
+    "name": "",
+    "type": "bool"
+   }
+  ],
+  "stateMutability": "view",
+  "type": "function"
+ },
+ {
+  "inputs": [],
+  "name": "lastHeartbeat",
+  "outputs": [
+   {
+    "internalType": "uint256",
+    "name": "",
+    "type": "uint256"
+   }
+  ],
+  "stateMutability": "view",
+  "type": "function"
+ },
+ {
+  "inputs": [],
+  "name": "maxEntryImpactBps",
+  "outputs": [
+   {
+    "internalType": "uint256",
+    "name": "",
+    "type": "uint256"
+   }
+  ],
+  "stateMutability": "view",
+  "type": "function"
+ },
+ {
+  "inputs": [
+   {
+    "internalType": "address",
+    "name": "_asset",
+    "type": "address"
+   },
+   {
+    "internalType": "uint256",
+    "name": "_since",
+    "type": "uint256"
+   }
+  ],
+  "name": "maxExposureBpsSince",
+  "outputs": [
+   {
+    "internalType": "uint256",
+    "name": "",
+    "type": "uint256"
+   }
+  ],
+  "stateMutability": "view",
+  "type": "function"
+ },
+ {
+  "inputs": [],
+  "name": "maxGraceExtension",
+  "outputs": [
+   {
+    "internalType": "uint256",
+    "name": "",
+    "type": "uint256"
+   }
+  ],
+  "stateMutability": "view",
+  "type": "function"
+ },
+ {
+  "inputs": [
+   {
+    "internalType": "enum AssetRegistry.RiskTier",
+    "name": "_tier",
+    "type": "uint8"
+   }
+  ],
+  "name": "maxTermForTier",
+  "outputs": [
+   {
+    "internalType": "uint256",
+    "name": "",
+    "type": "uint256"
+   }
+  ],
+  "stateMutability": "view",
+  "type": "function"
+ },
+ {
+  "inputs": [
+   {
+    "internalType": "enum AssetRegistry.RiskTier",
+    "name": "_tier",
+    "type": "uint8"
+   },
+   {
+    "internalType": "uint256",
+    "name": "_termSeconds",
+    "type": "uint256"
+   }
+  ],
+  "name": "minimumDepositBpsForTier",
+  "outputs": [
+   {
+    "internalType": "uint256",
+    "name": "",
+    "type": "uint256"
+   }
+  ],
+  "stateMutability": "view",
+  "type": "function"
+ },
+ {
+  "inputs": [],
+  "name": "operator",
+  "outputs": [
+   {
+    "internalType": "address",
+    "name": "",
+    "type": "address"
+   }
+  ],
+  "stateMutability": "view",
+  "type": "function"
+ },
+ {
+  "inputs": [
+   {
+    "internalType": "uint256",
+    "name": "_i",
+    "type": "uint256"
+   }
+  ],
+  "name": "outageAt",
+  "outputs": [
+   {
+    "internalType": "uint256",
+    "name": "start",
+    "type": "uint256"
+   },
+   {
+    "internalType": "uint256",
+    "name": "end",
+    "type": "uint256"
+   }
+  ],
+  "stateMutability": "view",
+  "type": "function"
+ },
+ {
+  "inputs": [],
+  "name": "outageCount",
+  "outputs": [
+   {
+    "internalType": "uint256",
+    "name": "",
+    "type": "uint256"
+   }
+  ],
+  "stateMutability": "view",
+  "type": "function"
+ },
+ {
+  "inputs": [],
+  "name": "outageGapThreshold",
+  "outputs": [
+   {
+    "internalType": "uint256",
+    "name": "",
+    "type": "uint256"
+   }
+  ],
+  "stateMutability": "view",
+  "type": "function"
+ },
+ {
+  "inputs": [],
+  "name": "pendingOperator",
+  "outputs": [
+   {
+    "internalType": "address",
+    "name": "",
+    "type": "address"
+   }
+  ],
+  "stateMutability": "view",
+  "type": "function"
+ },
+ {
+  "inputs": [
+   {
+    "internalType": "address",
+    "name": "_tokenA",
+    "type": "address"
+   },
+   {
+    "internalType": "address",
+    "name": "_tokenB",
+    "type": "address"
+   }
+  ],
+  "name": "poolFeeTier",
+  "outputs": [
+   {
+    "internalType": "uint24",
+    "name": "",
+    "type": "uint24"
+   }
+  ],
+  "stateMutability": "view",
+  "type": "function"
+ },
+ {
+  "inputs": [
+   {
+    "internalType": "bytes32",
+    "name": "_id",
+    "type": "bytes32"
+   }
+  ],
+  "name": "queueAction",
+  "outputs": [],
+  "stateMutability": "nonpayable",
+  "type": "function"
+ },
+ {
+  "inputs": [
+   {
+    "internalType": "bytes32",
+    "name": "",
+    "type": "bytes32"
+   }
+  ],
+  "name": "queuedAt",
+  "outputs": [
+   {
+    "internalType": "uint256",
+    "name": "",
+    "type": "uint256"
+   }
+  ],
+  "stateMutability": "view",
+  "type": "function"
+ },
+ {
+  "inputs": [],
+  "name": "recoveryPeriod",
+  "outputs": [
+   {
+    "internalType": "uint256",
+    "name": "",
+    "type": "uint256"
+   }
+  ],
+  "stateMutability": "view",
+  "type": "function"
+ },
+ {
+  "inputs": [
+   {
+    "internalType": "address",
+    "name": "_asset",
+    "type": "address"
+   }
+  ],
+  "name": "removeAsset",
+  "outputs": [],
+  "stateMutability": "nonpayable",
+  "type": "function"
+ },
+ {
+  "inputs": [
+   {
+    "internalType": "uint256",
+    "name": "_newBps",
+    "type": "uint256"
+   }
+  ],
+  "name": "setDepositCoeffBps",
+  "outputs": [],
+  "stateMutability": "nonpayable",
+  "type": "function"
+ },
+ {
+  "inputs": [
+   {
+    "internalType": "address",
+    "name": "_asset",
+    "type": "address"
+   },
+   {
+    "internalType": "uint256",
+    "name": "_gracePeriod",
+    "type": "uint256"
+   }
+  ],
+  "name": "setGracePeriod",
+  "outputs": [],
+  "stateMutability": "nonpayable",
+  "type": "function"
+ },
+ {
+  "inputs": [
+   {
+    "internalType": "uint256",
+    "name": "_newBps",
+    "type": "uint256"
+   }
+  ],
+  "name": "setMaxEntryImpactBps",
+  "outputs": [],
+  "stateMutability": "nonpayable",
+  "type": "function"
+ },
+ {
+  "inputs": [
+   {
+    "internalType": "uint256",
+    "name": "_gapThreshold",
+    "type": "uint256"
+   },
+   {
+    "internalType": "uint256",
+    "name": "_recoveryPeriod",
+    "type": "uint256"
+   },
+   {
+    "internalType": "uint256",
+    "name": "_maxGraceExtension",
+    "type": "uint256"
+   }
+  ],
+  "name": "setOutageConfig",
+  "outputs": [],
+  "stateMutability": "nonpayable",
+  "type": "function"
+ },
+ {
+  "inputs": [
+   {
+    "internalType": "address",
+    "name": "_tokenA",
+    "type": "address"
+   },
+   {
+    "internalType": "address",
+    "name": "_tokenB",
+    "type": "address"
+   },
+   {
+    "internalType": "uint24",
+    "name": "_fee",
+    "type": "uint24"
+   }
+  ],
+  "name": "setPoolFeeTier",
+  "outputs": [],
+  "stateMutability": "nonpayable",
+  "type": "function"
+ },
+ {
+  "inputs": [
+   {
+    "internalType": "uint32",
+    "name": "_twapWindow",
+    "type": "uint32"
+   },
+   {
+    "internalType": "uint256",
+    "name": "_twapToleranceBps",
+    "type": "uint256"
+   },
+   {
+    "internalType": "uint256",
+    "name": "_swapBackGracePeriod",
+    "type": "uint256"
+   },
+   {
+    "internalType": "uint256",
+    "name": "_bountyRatePerHourBps",
+    "type": "uint256"
+   },
+   {
+    "internalType": "uint256",
+    "name": "_bountyCapBps",
+    "type": "uint256"
+   }
+  ],
+  "name": "setSettlementConfig",
+  "outputs": [],
+  "stateMutability": "nonpayable",
+  "type": "function"
+ },
+ {
+  "inputs": [
+   {
+    "internalType": "address",
+    "name": "_asset",
+    "type": "address"
+   },
+   {
+    "internalType": "enum AssetRegistry.RiskTier",
+    "name": "_tier",
+    "type": "uint8"
+   }
+  ],
+  "name": "setTier",
+  "outputs": [],
+  "stateMutability": "nonpayable",
+  "type": "function"
+ },
+ {
+  "inputs": [
+   {
+    "internalType": "enum AssetRegistry.RiskTier",
+    "name": "_tier",
+    "type": "uint8"
+   },
+   {
+    "internalType": "uint256",
+    "name": "_assumedVolBps",
+    "type": "uint256"
+   },
+   {
+    "internalType": "uint256",
+    "name": "_minDepositBps",
+    "type": "uint256"
+   },
+   {
+    "internalType": "uint256",
+    "name": "_maxTermSeconds",
+    "type": "uint256"
+   },
+   {
+    "internalType": "uint256",
+    "name": "_maxExposureBps",
+    "type": "uint256"
+   },
+   {
+    "internalType": "uint256",
+    "name": "_insurancePremiumBps",
+    "type": "uint256"
+   }
+  ],
+  "name": "setTierConfig",
+  "outputs": [],
+  "stateMutability": "nonpayable",
+  "type": "function"
+ },
+ {
+  "inputs": [
+   {
+    "internalType": "uint256",
+    "name": "_deadline",
+    "type": "uint256"
+   },
+   {
+    "internalType": "uint256",
+    "name": "_graceEnd",
+    "type": "uint256"
+   }
+  ],
+  "name": "settlementWindow",
+  "outputs": [
+   {
+    "internalType": "uint256",
+    "name": "graceEnd",
+    "type": "uint256"
+   },
+   {
+    "internalType": "uint256",
+    "name": "keeperFrom",
+    "type": "uint256"
+   }
+  ],
+  "stateMutability": "view",
+  "type": "function"
+ },
+ {
+  "inputs": [],
+  "name": "swapBackGracePeriod",
+  "outputs": [
+   {
+    "internalType": "uint256",
+    "name": "",
+    "type": "uint256"
+   }
+  ],
+  "stateMutability": "view",
+  "type": "function"
+ },
+ {
+  "inputs": [],
+  "name": "swapRouter",
+  "outputs": [
+   {
+    "internalType": "address",
+    "name": "",
+    "type": "address"
+   }
+  ],
+  "stateMutability": "view",
+  "type": "function"
+ },
+ {
+  "inputs": [
+   {
+    "internalType": "enum AssetRegistry.RiskTier",
+    "name": "",
+    "type": "uint8"
+   }
+  ],
+  "name": "tierConfig",
+  "outputs": [
+   {
+    "internalType": "uint256",
+    "name": "assumedVolBps",
+    "type": "uint256"
+   },
+   {
+    "internalType": "uint256",
+    "name": "minDepositBps",
+    "type": "uint256"
+   },
+   {
+    "internalType": "uint256",
+    "name": "maxTermSeconds",
+    "type": "uint256"
+   },
+   {
+    "internalType": "uint256",
+    "name": "maxExposureBps",
+    "type": "uint256"
+   },
+   {
+    "internalType": "uint256",
+    "name": "insurancePremiumBps",
+    "type": "uint256"
+   }
+  ],
+  "stateMutability": "view",
+  "type": "function"
+ },
+ {
+  "inputs": [
+   {
+    "internalType": "address",
+    "name": "_asset",
+    "type": "address"
+   }
+  ],
+  "name": "tierHistoryLength",
+  "outputs": [
+   {
+    "internalType": "uint256",
+    "name": "",
+    "type": "uint256"
+   }
+  ],
+  "stateMutability": "view",
+  "type": "function"
+ },
+ {
+  "inputs": [
+   {
+    "internalType": "address",
+    "name": "_asset",
+    "type": "address"
+   }
+  ],
+  "name": "tierOf",
+  "outputs": [
+   {
+    "internalType": "enum AssetRegistry.RiskTier",
+    "name": "",
+    "type": "uint8"
+   }
+  ],
+  "stateMutability": "view",
+  "type": "function"
+ },
+ {
+  "inputs": [
+   {
+    "internalType": "bytes32",
+    "name": "_id",
+    "type": "bytes32"
+   }
+  ],
+  "name": "timeUntilExecutable",
+  "outputs": [
+   {
+    "internalType": "uint256",
+    "name": "",
+    "type": "uint256"
+   }
+  ],
+  "stateMutability": "view",
+  "type": "function"
+ },
+ {
+  "inputs": [],
+  "name": "timelockDelay",
+  "outputs": [
+   {
+    "internalType": "uint256",
+    "name": "",
+    "type": "uint256"
+   }
+  ],
+  "stateMutability": "view",
+  "type": "function"
+ },
+ {
+  "inputs": [],
+  "name": "totalAssets",
+  "outputs": [
+   {
+    "internalType": "uint256",
+    "name": "",
+    "type": "uint256"
+   }
+  ],
+  "stateMutability": "view",
+  "type": "function"
+ },
+ {
+  "inputs": [
+   {
+    "internalType": "address",
+    "name": "_newOperator",
+    "type": "address"
+   }
+  ],
+  "name": "transferOperator",
+  "outputs": [],
+  "stateMutability": "nonpayable",
+  "type": "function"
+ },
+ {
+  "inputs": [],
+  "name": "twapToleranceBps",
+  "outputs": [
+   {
+    "internalType": "uint256",
+    "name": "",
+    "type": "uint256"
+   }
+  ],
+  "stateMutability": "view",
+  "type": "function"
+ },
+ {
+  "inputs": [],
+  "name": "twapWindow",
+  "outputs": [
+   {
+    "internalType": "uint32",
+    "name": "",
+    "type": "uint32"
+   }
+  ],
+  "stateMutability": "view",
+  "type": "function"
+ },
+ {
+  "inputs": [],
+  "name": "uniswapFactory",
+  "outputs": [
+   {
+    "internalType": "address",
+    "name": "",
+    "type": "address"
+   }
+  ],
+  "stateMutability": "view",
+  "type": "function"
+ }
+]

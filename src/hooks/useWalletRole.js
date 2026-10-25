@@ -1,6 +1,7 @@
 import { useAccount, useChainId, useReadContract } from "wagmi";
 import { getContractsForChain, isPlaceholder } from "../config/contracts.js";
-import { KYC_REGISTRY_ABI, VAULT_FACTORY_ABI, ASSET_REGISTRY_ABI } from "../config/abis.js";
+import { VAULT_FACTORY_ABI, ASSET_REGISTRY_ABI } from "../config/abis.js";
+import { useEligibility } from "./useEligibility.js";
 
 /**
  * Detects which role(s), if any, the connected wallet genuinely has
@@ -26,26 +27,20 @@ import { KYC_REGISTRY_ABI, VAULT_FACTORY_ABI, ASSET_REGISTRY_ABI } from "../conf
 export function useWalletRole() {
   const { address, isConnected } = useAccount();
   const chainId = useChainId();
-  const { assetRegistry, vaultFactory, kycRegistry } = getContractsForChain(chainId);
+  const { assetRegistry, vaultFactory } = getContractsForChain(chainId);
+  const ready = !isPlaceholder(assetRegistry) && !isPlaceholder(vaultFactory);
 
-  // KYC is what makes someone a borrower, not owning a vault. Before
-  // mandates the distinction did not matter, because a borrower could only
-  // arrive at the app after a lender had already originated for them. Now
-  // their first action is filling a mandate, which they must reach the
-  // borrower view to do.
-  const verifiedQuery = useReadContract({
-    address: kycRegistry,
-    abi: KYC_REGISTRY_ABI,
-    functionName: "isVerified",
-    args: [address],
-    query: { enabled: isConnected && !!address && !isPlaceholder(kycRegistry) },
-  });
+  // Eligibility is what makes someone a borrower, not owning a vault: their
+  // first action is filling a mandate, which they must reach the borrower view
+  // to do. Read as isEligible against the factory's requirement rather than
+  // isVerified, which stays true after an attestation expires.
+  const borrowerEligibility = useEligibility(isConnected ? address : undefined, "borrower");
 
   const operatorQuery = useReadContract({
     address: assetRegistry,
     abi: ASSET_REGISTRY_ABI,
     functionName: "operator",
-    query: { enabled: isConnected },
+    query: { enabled: isConnected && ready },
   });
 
   const lenderVaultsQuery = useReadContract({
@@ -53,7 +48,7 @@ export function useWalletRole() {
     abi: VAULT_FACTORY_ABI,
     functionName: "getVaultsByLender",
     args: [address],
-    query: { enabled: isConnected && !!address },
+    query: { enabled: isConnected && !!address && ready },
   });
 
   const borrowerVaultsQuery = useReadContract({
@@ -61,17 +56,17 @@ export function useWalletRole() {
     abi: VAULT_FACTORY_ABI,
     functionName: "getVaultsByBorrower",
     args: [address],
-    query: { enabled: isConnected && !!address },
+    query: { enabled: isConnected && !!address && ready },
   });
 
   const isLoading =
     isConnected &&
     (operatorQuery.isLoading || lenderVaultsQuery.isLoading ||
-     borrowerVaultsQuery.isLoading || verifiedQuery.isLoading);
+     borrowerVaultsQuery.isLoading || borrowerEligibility.isLoading);
 
   // Distinguishes "checked, genuinely no roles" from "couldn't check at
   // all" (e.g. contracts.js still has a PLACEHOLDER address for this
-  // network — true right now, pre-Group F deployment). Surfaced so the
+  // network — true until the frozen contracts are deployed there). Surfaced so the
   // UI can tell those two states apart rather than showing an identical
   // "no role" screen for both, which is misleading during testing.
   const queryFailed =
@@ -100,13 +95,13 @@ export function useWalletRole() {
   const lenderVaults = (lenderVaultsQuery.data || []).length;
   const borrowerVaults = (borrowerVaultsQuery.data || []).length;
 
-  // Lending is permissionless — no KYC, no whitelist, no prior vault. Gating
-  // the lender view on already HAVING a vault was a bootstrap trap: the only
-  // way to originate one, or now to publish a mandate, is through the view
-  // that owning one unlocks. Anyone connected may lend.
+  // Anyone connected may OPEN the lender view. Lending itself now requires
+  // sanctions screening (requiredLenderClaims, #7) — the lender view checks
+  // that and explains it, rather than hiding the page from someone who has
+  // not been screened yet and so could never find out why.
   roles.push("lender");
 
-  if (borrowerVaults > 0 || verifiedQuery.data === true) roles.push("borrower");
+  if (borrowerVaults > 0 || borrowerEligibility.eligible === true) roles.push("borrower");
 
   // Distinct from capability. Someone who has actually transacted is sent
   // straight to their view; a wallet that merely COULD lend still gets the

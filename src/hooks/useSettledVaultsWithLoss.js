@@ -1,16 +1,18 @@
 import { useChainId, useReadContract, useReadContracts } from "wagmi";
-import { parseAbi } from "viem";
 import { VAULT_FACTORY_ABI, VAULT_ABI, ERC20_ABI } from "../config/abis.js";
 import { getContractsForChain, symbolForToken } from "../config/contracts.js";
 
-// abis.js already exports pre-parsed ABIs — do not re-wrap in parseAbi()
-// (parseAbi() is still used below for the one genuinely raw string signature).
+// abis.js exports ready-to-use ABIs.
 const factoryAbi = VAULT_FACTORY_ABI;
 const vaultAbi = VAULT_ABI;
 const erc20Abi = ERC20_ABI;
 
 // Surveys every vault deployed by the CURRENT factory and flags any that
-// settled with a loss (severity 1 = borrower-only, 2 = lender-impacted).
+// settled with a loss (severity 1 = borrower-only, 2 = lender-impacted) or in
+// kind (severity 3). An in-kind close is listed but not counted as a loss: the
+// lender received assets the vault could not sell, so whether they lost
+// anything depends on what those assets are worth, which the vault cannot
+// measure (audit I-3).
 // This is the visibility layer for manual revocation review (Group C
 // auto-revoke, Option C) — operators see lossy settlements here rather
 // than needing to run a backend script.
@@ -41,7 +43,7 @@ export function useSettledVaultsWithLoss() {
   const { data: addressResults } = useReadContracts({
     contracts: Array.from({ length: count }, (_, i) => ({
       address: contracts.vaultFactory,
-      abi: parseAbi(["function allVaults(uint256) view returns (address)"]),
+      abi: factoryAbi,
       functionName: "allVaults",
       args: [BigInt(i)],
     })),
@@ -81,7 +83,7 @@ export function useSettledVaultsWithLoss() {
 
       lossyRaw.push({
         address: vaultAddresses[i],
-        severity: Number(severity), // 1 = borrower-only, 2 = lender-impacted
+        severity: Number(severity), // 1 = borrower-only, 2 = lender-impacted, 3 = in kind
         borrower: stateResults[base + 2]?.result,
         principal: stateResults[base + 3]?.result,
         settledTotalReturned: stateResults[base + 4]?.result,
@@ -111,8 +113,10 @@ export function useSettledVaultsWithLoss() {
     symbol: symbolForToken(chainId, v.asset),
   }));
 
-  // Lender-impacted first — the more severe category worth attention first.
-  lossyVaults.sort((a, b) => b.severity - a.severity);
+  // Lender-impacted first, then borrower-only, then in-kind closes — the
+  // in-kind ones need a look, but are not known losses.
+  const rank = { 2: 0, 1: 1, 3: 2 };
+  lossyVaults.sort((a, b) => (rank[a.severity] ?? 9) - (rank[b.severity] ?? 9));
 
   return { lossyVaults, isLoading, refetch };
 }

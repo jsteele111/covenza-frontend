@@ -1,13 +1,16 @@
 import { useState, useEffect, useMemo, useCallback } from "react";
 import { useAccount, useChainId, useReadContract, useReadContracts, useWriteContract, useWaitForTransactionReceipt, usePublicClient } from "wagmi";
-import { parseAbiItem, parseUnits, isAddress, keccak256, encodeAbiParameters } from "viem";
-import { KYC_REGISTRY_ABI, ASSET_REGISTRY_ABI, INSURANCE_POOL_ABI, ERC20_ABI } from "../config/abis.js";
-import { getContractsForChain, isPlaceholder, symbolForToken } from "../config/contracts.js";
+import { parseAbiItem, parseUnits, isAddress, keccak256, encodeAbiParameters, encodeFunctionData } from "viem";
+import {
+  KYC_REGISTRY_ABI, ASSET_REGISTRY_ABI, INSURANCE_POOL_ABI, ERC20_ABI,
+  UNISWAP_V3_FACTORY_ABI, UNISWAP_V3_POOL_ABI,
+} from "../config/abis.js";
+import { getContractsForChain, isPlaceholder, symbolForToken, ZERO_ADDRESS } from "../config/contracts.js";
 import { shortAddress, formatTokenAmount } from "../utils/format.js";
 import { useSettledVaultsWithLoss } from "../hooks/useSettledVaultsWithLoss.js";
 import { useAssetPreflight } from "../hooks/useAssetPreflight.js";
 import { useAttesters } from "../hooks/useAttesters.js";
-import { VENUE_LABELS, TIER_LABELS } from "../hooks/useVaultData.js";
+import { TIER_LABELS } from "../hooks/useVaultData.js";
 import { ActionButton } from "./ActionButton.jsx";
 
 // abis.js already exports pre-parsed ABIs — do not re-wrap in parseAbi().
@@ -16,12 +19,13 @@ const assetRegistryAbi = ASSET_REGISTRY_ABI;
 const insurancePoolAbi = INSURANCE_POOL_ABI;
 const erc20Abi = ERC20_ABI;
 
-// Mirrors AssetRegistry.YieldVenue, ABI-encoded as uint8.
-const VENUE_NONE = 0;
-const VENUE_AAVE = 1;
-const VENUE_4626 = 2;
-
-const ZERO_ADDRESS = "0x0000000000000000000000000000000000000000";
+// Uniswap V3 fee tiers an approved pool may use.
+const FEE_TIERS = [
+  { label: "0.05%", value: 500 },
+  { label: "0.3%", value: 3000 },
+  { label: "1%", value: 10000 },
+];
+const FEE_LABELS = { 100: "0.01%", 500: "0.05%", 3000: "0.3%", 10000: "1%" };
 
 // Colour carries the ordering so risk reads at a glance rather than needing
 // the label parsed. Labels themselves come from useVaultData, which is the
@@ -61,6 +65,20 @@ function tryParseUnits(value, decimals) {
  *   - SettlementConfigPanel — TWAP window/tolerance, swap-back grace
  *                             period, keeper bounty rate/cap (one atomic
  *                             update, matching the contract's own design)
+ *
+ * October 2026 — brought up to the contracts frozen for audit:
+ *   - Yield venues are gone (E-1); an asset is listed with addAssetWithTier
+ *     (asset, grace extension, tier).
+ *   - ApprovedPoolPanel names the one Uniswap pool vaults must use for each
+ *     pair (KRAIT-003, item 20), and checks the pool keeps more price-history
+ *     slots than the TWAP window has seconds before offering it (KRAIT-004).
+ *   - Changes that open vaults read at settlement are timelocked (item 12):
+ *     settlement config, the draw cap, the reserve share, changing an
+ *     approved pool, and administrative withdrawal. Each is announced by the
+ *     hash of its exact calldata and executed after the delay, through
+ *     TimelockedCall, which shows the pending state rather than hiding it.
+ *   - The loss history lists in-kind settlements (severity 3) separately: the
+ *     lender received assets, so the cash figures are not a loss measure.
  */
 export function OperatorTab() {
   const { address, isConnected } = useAccount();
@@ -85,6 +103,11 @@ export function OperatorTab() {
   const { lossyVaults, isLoading: lossyLoading, refetch: refetchLossy } = useSettledVaultsWithLoss();
 
   const loadVerifiedAddresses = useCallback(async () => {
+    if (isPlaceholder(contracts.kycRegistry)) {
+      setVerifiedAddresses([]);
+      setLoading(false);
+      return;
+    }
     setLoading(true);
     try {
       const logs = await publicClient.getLogs({
@@ -191,8 +214,8 @@ export function OperatorTab() {
       <div>
         <p style={sectionLabelStyle}>Settlement loss history</p>
         <p style={{ fontSize: 11, color: "var(--parch-dim)", margin: "0 0 4px" }}>
-          Settled vaults with a loss — revocation is never automatic; review each case and
-          decide whether it warrants pulling KYC status.
+          Settled vaults with a loss, and vaults settled in kind — revocation is never automatic;
+          review each case and decide whether it warrants pulling the borrower's verification.
         </p>
 
         {lossyLoading && (
@@ -207,6 +230,7 @@ export function OperatorTab() {
 
         {lossyVaults.map((v) => {
           const isLenderImpacted = v.severity === 2;
+          const isInKind = v.severity === 3;
           const amount = (value) => `${formatTokenAmount(value, v.decimals)} ${v.symbol}`;
           return (
             <div
@@ -228,7 +252,7 @@ export function OperatorTab() {
                       padding: "2px 8px",
                     }}
                   >
-                    {isLenderImpacted ? "Lender-impacted" : "Borrower-only"} — {v.symbol}
+                    {isLenderImpacted ? "Lender-impacted" : isInKind ? "Settled in kind" : "Borrower-only"} — {v.symbol}
                   </span>
                   <p className="mono" style={{ fontSize: 12, color: "var(--parch)", margin: "8px 0 0" }}>
                     {shortAddress(v.address)}
@@ -247,6 +271,13 @@ export function OperatorTab() {
                 )}
                 <Row label="Lender received" value={amount(v.settledLenderPayout)} />
                 <Row label="Borrower received" value={amount(v.settledBorrowerPayout)} />
+                {isInKind && (
+                  <p style={{ fontSize: 11, color: "var(--parch-dim)", margin: "4px 0 0", lineHeight: 1.5 }}>
+                    Cash only. The vault could not sell every held asset, so the lender also received
+                    assets at their TWAP value. Not by itself evidence of a loss — check whether the
+                    asset was frozen or its pool drained before judging the borrower.
+                  </p>
+                )}
               </div>
 
               <button
@@ -264,7 +295,7 @@ export function OperatorTab() {
                   opacity: busyFor(v.borrower) ? 0.6 : 1,
                 }}
               >
-                {busyFor(v.borrower) ? "Confirming..." : "Revoke borrower's KYC"}
+                {busyFor(v.borrower) ? "Confirming..." : "Revoke borrower's verification"}
               </button>
             </div>
           );
@@ -275,8 +306,9 @@ export function OperatorTab() {
       <div>
         <p style={sectionLabelStyle}>Verified addresses</p>
         <p style={{ fontSize: 11, color: "var(--parch-dim)", margin: "0 0 4px" }}>
-          Verification now happens automatically via signed attestation — revoke manually here
-          for any other reason (e.g. sanctions match, re-screening failure).
+          Wallets are admitted by a recognised provider's attestation, which now expires on its own
+          (at most 365 days). Revoke here for any other reason — a sanctions match, a failed
+          re-screening — and it takes effect immediately for borrowing and lending alike.
         </p>
 
         {loading && <p style={{ fontSize: 12, color: "var(--parch-dim)", margin: "8px 0" }}>Loading verified addresses...</p>}
@@ -319,6 +351,7 @@ export function OperatorTab() {
       {registryReady ? (
         <>
           <AssetWhitelistPanel />
+          <ApprovedPoolPanel />
           {/* Sits beside the asset whitelist because it is the same class of
               decision: both admit something to the protocol on the operator's
               judgement alone. Recognising an attester is arguably the heavier
@@ -331,7 +364,7 @@ export function OperatorTab() {
       ) : (
         <div>
           <p style={sectionLabelStyle}>Protocol governance</p>
-          <EmptyState message="The asset registry and insurance pool haven't been deployed on this network yet — whitelist, insurance, and settlement-config controls will appear here once Group F's deployment fills in real addresses." />
+          <EmptyState message="The asset registry and insurance pool haven't been deployed on this network yet — whitelist, pool, insurance and settlement-config controls will appear here once their addresses are filled in after a deploy." />
         </div>
       )}
       </fieldset>
@@ -634,9 +667,6 @@ function AssetWhitelistPanel() {
   const publicClient = usePublicClient();
 
   const [newAsset, setNewAsset] = useState("");
-  const [newAToken, setNewAToken] = useState("");
-  const [newVenue, setNewVenue] = useState(VENUE_NONE);
-  const [newVenueAddress, setNewVenueAddress] = useState("");
   const [newGraceHours, setNewGraceHours] = useState("0");
 
   // Defaults to Speculative, matching the registry. An unassessed asset should
@@ -715,9 +745,6 @@ function AssetWhitelistPanel() {
       refetchWhitelist();
       refetchTiers();
       setNewAsset("");
-      setNewAToken("");
-      setNewVenue(VENUE_NONE);
-      setNewVenueAddress("");
       setNewGraceHours("0");
       setAcknowledged(false);
       setPendingAsset(null);
@@ -726,21 +753,9 @@ function AssetWhitelistPanel() {
   }, [isSuccess]);
 
   const newAssetValid = isAddress(newAsset);
-  const newATokenValid = !newAToken || isAddress(newAToken); // blank = address(0)
   const busy = isPending || isConfirming;
 
-  // Venue validity mirrors AssetRegistry._validateVenue, so an invalid
-  // combination is caught here rather than as an opaque revert.
-  const venueValid =
-    newVenue === VENUE_AAVE   ? isAddress(newAToken)
-    : newVenue === VENUE_4626 ? isAddress(newVenueAddress)
-    : true;
-
-  const venueReason =
-    newVenue === VENUE_AAVE   ? "The Aave venue needs the asset's aToken."
-    : newVenue === VENUE_4626 ? "The ERC-4626 venue needs a vault address."
-    : "";
-
+  // MAX_GRACE_EXTENSION is 14 days.
   const graceValid =
     newGraceHours === "" || (Number.isFinite(Number(newGraceHours)) && Number(newGraceHours) >= 0 && Number(newGraceHours) <= 336);
 
@@ -753,8 +768,6 @@ function AssetWhitelistPanel() {
 
   const blockedReason =
     !newAssetValid                                ? "Enter a valid asset address."
-    : !newATokenValid                             ? "Aave aToken must be a valid address or blank."
-    : !venueValid                                 ? venueReason
     : !graceValid                                 ? "Grace extension must be 0–336 hours."
     : preflight.isChecking                        ? "Checking pools…"
     : preflight.alreadyListed                     ? "This asset is already whitelisted."
@@ -769,16 +782,13 @@ function AssetWhitelistPanel() {
       writeContract({
         address: contracts.assetRegistry,
         abi: assetRegistryAbi,
-        // Lists and tags in one transaction. addAssetWithVenue would leave the
-        // asset at the registry's default — now Speculative — until a second
-        // transaction moved it, which is safe but means the tier the operator
-        // chose is briefly not the tier in force.
+        // Lists and tags in one transaction. Plain addAsset would leave the
+        // asset at the registry's default — Speculative — until a second
+        // transaction moved it, and the tier history would record a tier
+        // nobody intended.
         functionName: "addAssetWithTier",
         args: [
           newAsset,
-          newAToken || ZERO_ADDRESS,
-          newVenue,
-          newVenue === VENUE_4626 ? newVenueAddress : ZERO_ADDRESS,
           BigInt(Math.round(Number(newGraceHours || 0) * 3600)),
           newTier,
         ],
@@ -832,40 +842,6 @@ function AssetWhitelistPanel() {
           <Field label="Asset address">
             <input value={newAsset} onChange={(e) => onCandidateChange(e.target.value)} style={inputStyle} placeholder="0x..." />
           </Field>
-          <Field label="Aave aToken (blank if no Aave)">
-            <input value={newAToken} onChange={(e) => setNewAToken(e.target.value)} style={inputStyle} placeholder="0x... or blank" />
-          </Field>
-        </Row2>
-
-        <Field label="Yield venue">
-          <div style={{ display: "inline-flex", background: "var(--ink)", border: "1px solid var(--hairline)", borderRadius: 8, padding: 3 }}>
-            {[VENUE_NONE, VENUE_AAVE, VENUE_4626].map((v) => {
-              const active = newVenue === v;
-              return (
-                <button
-                  key={v}
-                  type="button"
-                  onClick={() => setNewVenue(v)}
-                  style={{
-                    border: "none", borderRadius: 6, padding: "6px 14px", fontSize: 12, cursor: "pointer",
-                    background: active ? "var(--brass)" : "transparent",
-                    color: active ? "#1C1C1A" : "var(--parch-dim)",
-                    fontWeight: active ? 600 : 400,
-                  }}
-                >
-                  {VENUE_LABELS[v]}
-                </button>
-              );
-            })}
-          </div>
-        </Field>
-
-        <Row2>
-          {newVenue === VENUE_4626 && (
-            <Field label="ERC-4626 vault address">
-              <input value={newVenueAddress} onChange={(e) => setNewVenueAddress(e.target.value)} style={inputStyle} placeholder="0x..." />
-            </Field>
-          )}
           <Field label="Grace extension (hours)">
             <input value={newGraceHours} onChange={(e) => setNewGraceHours(e.target.value)} style={inputStyle} placeholder="0" />
           </Field>
@@ -874,7 +850,9 @@ function AssetWhitelistPanel() {
         <p style={{ ...preflightNoteStyle, margin: "0 0 12px" }}>
           The extension only ever lengthens the global swap-back grace, and applies to
           vaults <em>holding</em> this asset. Leave it at zero for anything continuously
-          traded; a tokenised equity trades 24/5, so 72 hours covers a weekend.
+          traded; a tokenised equity trades 24/5, so 72 hours covers a weekend. At most 14 days.
+          Re-listing a removed asset with a different extension is timelocked, because vaults
+          may still hold it.
         </p>
 
         <Field label="Risk tier">
@@ -904,6 +882,15 @@ function AssetWhitelistPanel() {
         </p>
 
         <PreflightReport preflight={preflight} />
+
+        {preflight.ready && preflight.starvablePairs?.length > 0 && (
+          <p style={{ fontSize: 11, color: "var(--brick)", margin: "0 0 12px", lineHeight: 1.5 }}>
+            {preflight.starvablePairs.length} quotable pool{preflight.starvablePairs.length === 1 ? " keeps" : "s keep"}{" "}
+            too little price history for the {preflight.twapWindow}s window — no more slots than the
+            window has seconds — so {preflight.starvablePairs.length === 1 ? "it" : "they"} cannot be
+            approved for swaps until grown with the pool's increaseObservationCardinalityNext.
+          </p>
+        )}
 
         {needsAcknowledgement && (
           <label style={acknowledgeStyle}>
@@ -940,11 +927,12 @@ function AssetWhitelistPanel() {
                 <p className="mono" style={{ fontSize: 13, color: "var(--parch)", margin: "0 0 4px" }}>{a.symbol}</p>
                 <p className="mono" style={{ fontSize: 11, color: "var(--parch-dim)", margin: "0 0 6px" }}>{shortAddress(a.address)}</p>
 
-                {/* Re-tagging takes effect on the NEXT swap of every live vault:
-                    the ceiling is snapshotted per vault, but tierOf is read
-                    fresh. So discovering an asset is riskier than thought
-                    closes it off immediately, without stranding anyone already
-                    holding it. */}
+                {/* Re-tagging is recorded in the asset's tier history. Vaults
+                    check the RISKIEST tier the asset has held since they
+                    originated, so tagging an asset riskier closes it to live
+                    vaults whose ceiling it now exceeds, while tagging it safer
+                    loosens nothing for loans already open — only for new
+                    ones. Anyone already holding it can still swap back. */}
                 <div style={{ display: "inline-flex", background: "var(--ink)", border: "1px solid var(--hairline)", borderRadius: 6, padding: 2 }}>
                   {[0, 1, 2].map((t) => {
                     const active = a.tier === t;
@@ -998,12 +986,350 @@ function AssetWhitelistPanel() {
   );
 }
 
-// --- Insurance pool: reserves, draw cap, administrative withdrawal ---
+// --- Timelocked changes ---
+
+/**
+ * Announce, wait, execute — for one specific call.
+ *
+ * Every setter that open vaults read at settlement is timelocked (item 12):
+ * the operator announces the change by the hash of its exact calldata with
+ * queueAction(id), waits timelockDelay, then sends the identical call, which
+ * consumes the announcement. Changing any argument changes the hash, so what
+ * executes is exactly what was on public view during the delay. An
+ * announcement lapses EXECUTION_WINDOW (14 days) after it matures.
+ *
+ * With a delay of zero (some local deployments) the call goes straight
+ * through; `needsTimelock: false` covers setters that are only delayed in
+ * one direction, such as naming a pair's FIRST approved pool.
+ *
+ * @param contract   address of a Timelocked contract
+ * @param abi        its ABI
+ * @param call       { functionName, args } or null while the inputs are invalid
+ * @param id         optional explicit queue id (admin withdrawal hashes its
+ *                   own tagged encoding); default keccak256(calldata)
+ * @param queueCall  optional { functionName, args } to announce; default queueAction(id)
+ * @param cancelCall optional { functionName, args } to abandon; default cancelAction(id)
+ */
+function TimelockedCall({
+  contract, abi, call, id: explicitId, queueCall, cancelCall,
+  needsTimelock = true, label, invalidReason, onDone,
+}) {
+  const publicClient = usePublicClient();
+  const [stage, setStage] = useState(null); // "queue" | "execute" | "cancel"
+  const { writeContract, data: hash, isPending, error, reset } = useWriteContract();
+  const { data: receipt, isLoading: isConfirming } = useWaitForTransactionReceipt({ hash });
+
+  // Recomputed each render: encoding a handful of arguments is cheap, and the
+  // id must track the inputs exactly.
+  let calldata = null;
+  if (call) {
+    try {
+      calldata = encodeFunctionData({ abi, functionName: call.functionName, args: call.args });
+    } catch {
+      calldata = null;
+    }
+  }
+
+  const id = explicitId ?? (calldata ? keccak256(calldata) : null);
+  const ZERO_ID = "0x".padEnd(66, "0");
+
+  const { data: reads, refetch } = useReadContracts({
+    contracts: [
+      { address: contract, abi, functionName: "timelockDelay" },
+      { address: contract, abi, functionName: "queuedAt", args: [id ?? ZERO_ID] },
+      { address: contract, abi, functionName: "timeUntilExecutable", args: [id ?? ZERO_ID] },
+      { address: contract, abi, functionName: "executionDeadline", args: [id ?? ZERO_ID] },
+    ],
+    query: { enabled: Boolean(contract), refetchInterval: 5000 },
+  });
+
+  useEffect(() => {
+    if (!receipt) return;
+    refetch();
+    if (receipt.status === "success" && stage === "execute") onDone?.();
+    setStage(null);
+    reset();
+  }, [receipt]);
+
+  const delay = Number(reads?.[0]?.result ?? 0);
+  const queuedAt = id ? Number(reads?.[1]?.result ?? 0) : 0;
+  const secondsLeft = Number(reads?.[2]?.result ?? 0);
+  const deadline = Number(reads?.[3]?.result ?? 0);
+  const now = Math.floor(Date.now() / 1000);
+
+  const direct = delay === 0 || !needsTimelock;
+  const lapsed = queuedAt > 0 && deadline > 0 && now > deadline;
+  const isQueued = queuedAt > 0 && !lapsed;
+  const isMature = isQueued && secondsLeft === 0;
+  const busy = isPending || isConfirming;
+
+  async function send(stageName, target) {
+    setStage(stageName);
+    try {
+      const fees = await publicClient.estimateFeesPerGas();
+      writeContract({
+        address: contract,
+        abi,
+        functionName: target.functionName,
+        args: target.args,
+        maxFeePerGas: fees.maxFeePerGas * 2n,
+        maxPriorityFeePerGas: fees.maxPriorityFeePerGas,
+      });
+    } catch {
+      setStage(null);
+    }
+  }
+
+  const execute = () => send("execute", call);
+  const announce = () => send("queue", queueCall ?? { functionName: "queueAction", args: [id] });
+  const abandon = () => send("cancel", cancelCall ?? { functionName: "cancelAction", args: [id] });
+
+  const valid = Boolean(call && id);
+
+  return (
+    <div>
+      {direct ? (
+        <ActionButton
+          label={label}
+          primary={valid}
+          disabled={!valid || busy}
+          disabledReason={invalidReason}
+          loading={busy && stage === "execute"}
+          onClick={execute}
+        />
+      ) : !isQueued ? (
+        <ActionButton
+          label={`Announce — ${label.toLowerCase()} in ${formatDuration(delay)}`}
+          primary={valid}
+          disabled={!valid || busy}
+          disabledReason={invalidReason}
+          loading={busy && stage === "queue"}
+          onClick={announce}
+        />
+      ) : (
+        <div style={{ border: "1px solid var(--brass)", borderRadius: 8, padding: "12px 14px" }}>
+          <p style={{ fontSize: 12, color: "var(--brass)", margin: "0 0 4px", fontWeight: 600 }}>
+            {isMature ? "Ready to execute" : "Announced — waiting"}
+          </p>
+          <p style={{ fontSize: 11, color: "var(--parch-dim)", margin: "0 0 10px", lineHeight: 1.5 }}>
+            {isMature
+              ? `The delay has elapsed. Executing sends exactly these values — change any of them and it must be announced again. Lapses ${new Date(deadline * 1000).toLocaleString()}.`
+              : `Executable in ${formatDuration(secondsLeft)}. Anyone watching this contract can see it pending, which is the point.`}
+          </p>
+          <div style={{ display: "flex", gap: 8 }}>
+            <ActionButton
+              label={label}
+              primary={isMature}
+              disabled={!isMature || busy}
+              disabledReason="The timelock has not elapsed."
+              loading={busy && stage === "execute"}
+              onClick={execute}
+            />
+            <button onClick={abandon} disabled={busy} style={smallDangerButtonStyle}>
+              Abandon
+            </button>
+          </div>
+        </div>
+      )}
+      {lapsed && (
+        <p style={{ fontSize: 11, color: "var(--parch-dim)", marginTop: 8 }}>
+          An earlier announcement of exactly this change lapsed unexecuted; announce it again.
+        </p>
+      )}
+      {error && <p style={errorTextStyle}>{error.shortMessage || error.message}</p>}
+      {receipt?.status === "reverted" && <p style={errorTextStyle}>Mined but reverted — nothing changed.</p>}
+    </div>
+  );
+}
+
+// --- Approved pools ---
+
+/**
+ * Names the one Uniswap pool vaults must use for each pair (KRAIT-003, item
+ * 20). Without it a borrower picked the fee tier, and could enter through a
+ * deep pool and leave the vault exiting through a thin one they controlled.
+ *
+ * A pool is offered only if it keeps MORE price-history slots than the TWAP
+ * window has seconds (KRAIT-004): otherwise anyone can overwrite the history
+ * with one swap a block and leave the TWAP unreadable, which blocks every
+ * exit. The registry refuses such a pool too; checking here says why before
+ * the operator signs anything.
+ *
+ * Naming a pair's first pool is instant — nothing can be open in a pair with
+ * no approved pool. Changing it is timelocked. An open position keeps the pool
+ * it was bought through either way.
+ */
+function ApprovedPoolPanel() {
+  const chainId = useChainId();
+  const contracts = getContractsForChain(chainId);
+
+  const { data: base } = useReadContracts({
+    contracts: [
+      { address: contracts.assetRegistry, abi: assetRegistryAbi, functionName: "getWhitelistedAssets" },
+      { address: contracts.assetRegistry, abi: assetRegistryAbi, functionName: "uniswapFactory" },
+      { address: contracts.assetRegistry, abi: assetRegistryAbi, functionName: "twapWindow" },
+    ],
+  });
+  const assetList = base?.[0]?.result || [];
+  const uniFactory = base?.[1]?.result;
+  const twapWindow = base?.[2]?.result != null ? Number(base[2].result) : undefined;
+
+  // Every unordered pair of whitelisted assets.
+  const pairs = [];
+  for (let i = 0; i < assetList.length; i++) {
+    for (let j = i + 1; j < assetList.length; j++) pairs.push([assetList[i], assetList[j]]);
+  }
+
+  const { data: approved, refetch } = useReadContracts({
+    contracts: pairs.map(([a, b]) => ({
+      address: contracts.assetRegistry, abi: assetRegistryAbi, functionName: "poolFeeTier", args: [a, b],
+    })),
+    query: { enabled: pairs.length > 0 },
+  });
+
+  return (
+    <div>
+      <p style={sectionLabelStyle}>Approved pools</p>
+      <p style={{ fontSize: 11, color: "var(--parch-dim)", margin: "0 0 10px", lineHeight: 1.5 }}>
+        The protocol, not the borrower, names the pool each pair trades through. A pair with no
+        approved pool cannot be swapped. A pool qualifies only if it keeps more price-history slots
+        than the {twapWindow ?? "—"}s TWAP window has seconds.
+      </p>
+      {pairs.length === 0 && <EmptyState message="Whitelist at least two assets to approve a pool between them." />}
+      <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+        {pairs.map(([a, b], i) => (
+          <PoolPairRow
+            key={`${a}-${b}`}
+            tokenA={a}
+            tokenB={b}
+            current={approved?.[i]?.result != null ? Number(approved[i].result) : undefined}
+            uniFactory={uniFactory}
+            twapWindow={twapWindow}
+            onDone={refetch}
+          />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function PoolPairRow({ tokenA, tokenB, current, uniFactory, twapWindow, onDone }) {
+  const chainId = useChainId();
+  const contracts = getContractsForChain(chainId);
+  const [fee, setFee] = useState(null);
+  const chosen = fee ?? (current || 3000);
+
+  // Pool address and history depth at every tier, so the operator sees which
+  // tiers qualify before choosing one.
+  const { data: poolResults } = useReadContracts({
+    contracts: FEE_TIERS.map((t) => ({
+      address: uniFactory, abi: UNISWAP_V3_FACTORY_ABI, functionName: "getPool", args: [tokenA, tokenB, t.value],
+    })),
+    query: { enabled: Boolean(uniFactory) },
+  });
+  const pools = FEE_TIERS.map((t, i) => {
+    const addr = poolResults?.[i]?.result;
+    return { fee: t.value, pool: addr && addr !== ZERO_ADDRESS ? addr : null };
+  });
+
+  const { data: slotResults } = useReadContracts({
+    contracts: pools.filter((p) => p.pool).map((p) => ({
+      address: p.pool, abi: UNISWAP_V3_POOL_ABI, functionName: "slot0",
+    })),
+    query: { enabled: pools.some((p) => p.pool), refetchInterval: 15000 },
+  });
+  let k = 0;
+  const tiers = pools.map((p) => {
+    if (!p.pool) return { ...p, cardinality: undefined, qualifies: false };
+    const slot = slotResults?.[k++]?.result;
+    const cardinality = slot ? Number(slot[3]) : undefined;
+    return {
+      ...p,
+      cardinality,
+      qualifies: cardinality !== undefined && twapWindow !== undefined && cardinality > twapWindow,
+    };
+  });
+
+  const sel = tiers.find((t) => t.fee === chosen);
+  const unchanged = current === chosen;
+  const invalidReason = unchanged
+    ? "This is already the approved pool."
+    : !sel?.pool
+    ? "No pool exists at this fee tier."
+    : sel.cardinality === undefined
+    ? "Reading the pool…"
+    : !sel.qualifies
+    ? `This pool keeps ${sel.cardinality} history slots; it needs more than ${twapWindow}. Grow it with increaseObservationCardinalityNext first.`
+    : undefined;
+  const call = invalidReason ? null : { functionName: "setPoolFeeTier", args: [tokenA, tokenB, chosen] };
+
+  return (
+    <div style={cardStyle}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 10, gap: 12 }}>
+        <span className="mono" style={{ fontSize: 13, color: "var(--parch)" }}>
+          {symbolForToken(chainId, tokenA)} / {symbolForToken(chainId, tokenB)}
+        </span>
+        <span style={{ fontSize: 11, color: current ? "var(--brass)" : "var(--parch-dim)" }}>
+          {current === undefined ? "—" : current ? `approved: ${FEE_LABELS[current] || current}` : "no approved pool"}
+        </span>
+      </div>
+      <div style={{ display: "inline-flex", background: "var(--ink)", border: "1px solid var(--hairline)", borderRadius: 8, padding: 3, marginBottom: 8 }}>
+        {tiers.map((t) => {
+          const active = chosen === t.fee;
+          return (
+            <button
+              key={t.fee}
+              type="button"
+              onClick={() => setFee(t.fee)}
+              style={{
+                border: "none", borderRadius: 6, padding: "5px 12px", fontSize: 12, cursor: "pointer",
+                background: active ? "var(--brass)" : "transparent",
+                color: active ? "#1C1C1A" : t.qualifies ? "var(--parch)" : "var(--parch-dim)",
+                fontWeight: active ? 600 : 400,
+                textDecoration: t.pool ? "none" : "line-through",
+              }}
+            >
+              {FEE_LABELS[t.fee]}
+            </button>
+          );
+        })}
+      </div>
+      <p style={{ fontSize: 11, color: "var(--parch-dim)", margin: "0 0 10px" }}>
+        {tiers.map((t) => (
+          <span key={t.fee} style={{ marginRight: 12 }}>
+            {FEE_LABELS[t.fee]}:{" "}
+            {!t.pool ? "no pool" : t.cardinality === undefined ? "…" : (
+              <span style={{ color: t.qualifies ? "var(--brass)" : "var(--brick)" }}>
+                {t.cardinality} slots
+              </span>
+            )}
+          </span>
+        ))}
+      </p>
+      <TimelockedCall
+        contract={contracts.assetRegistry}
+        abi={assetRegistryAbi}
+        call={call}
+        needsTimelock={Boolean(current)}
+        label={current ? "Change approved pool" : "Approve pool"}
+        invalidReason={invalidReason}
+        onDone={() => { setFee(null); onDone(); }}
+      />
+      {Boolean(current) && (
+        <p style={{ fontSize: 10.5, color: "var(--slate)", margin: "8px 0 0", lineHeight: 1.5 }}>
+          Changing it applies to new positions only; a vault already holding the asset keeps the pool it
+          bought through.
+        </p>
+      )}
+    </div>
+  );
+}
+
+// --- Insurance pool: reserves, draw limits, administrative withdrawal ---
 
 function InsurancePoolPanel() {
   const chainId = useChainId();
   const contracts = getContractsForChain(chainId);
-  const publicClient = usePublicClient();
 
   const { data: whitelistedAssets } = useReadContract({
     address: contracts.assetRegistry,
@@ -1020,11 +1346,14 @@ function InsurancePoolPanel() {
     query: { enabled: assetList.length > 0 },
   });
 
-  const { data: drawCapBps, refetch: refetchDrawCap } = useReadContract({
-    address: contracts.insurancePool,
-    abi: insurancePoolAbi,
-    functionName: "drawCapBps",
+  const { data: limits, refetch: refetchLimits } = useReadContracts({
+    contracts: [
+      { address: contracts.insurancePool, abi: insurancePoolAbi, functionName: "drawCapBps" },
+      { address: contracts.insurancePool, abi: insurancePoolAbi, functionName: "maxDrawShareBps" },
+    ],
   });
+  const drawCapBps = limits?.[0]?.result;
+  const maxDrawShareBps = limits?.[1]?.result;
 
   const reserves = assetList.map((a, i) => ({
     address: a,
@@ -1034,10 +1363,10 @@ function InsurancePoolPanel() {
   }));
 
   const [newDrawCap, setNewDrawCap] = useState("");
+  const [newDrawShare, setNewDrawShare] = useState("");
   const [withdrawAsset, setWithdrawAsset] = useState("");
   const [withdrawTo, setWithdrawTo] = useState("");
   const [withdrawAmount, setWithdrawAmount] = useState("");
-  const [pendingAction, setPendingAction] = useState(null); // "drawcap" | "withdraw" | null
 
   useEffect(() => {
     if (!withdrawAsset && assetList.length > 0) setWithdrawAsset(assetList[0]);
@@ -1050,69 +1379,33 @@ function InsurancePoolPanel() {
     query: { enabled: Boolean(withdrawAsset) },
   });
 
-  const { writeContract, data: hash, isPending, error, reset } = useWriteContract();
-  const { isLoading: isConfirming, isSuccess } = useWaitForTransactionReceipt({ hash });
-
-  useEffect(() => {
-    if (isSuccess) {
-      refetchReserves();
-      refetchDrawCap();
-      setNewDrawCap("");
-      setWithdrawTo("");
-      setWithdrawAmount("");
-      setPendingAction(null);
-      reset();
-    }
-  }, [isSuccess]);
-
-  const busy = isPending || isConfirming;
-
-  const drawCapValueValid =
-    newDrawCap !== "" && Number.isFinite(Number(newDrawCap)) && Number(newDrawCap) > 0 && Number(newDrawCap) <= 10000;
-
-  async function updateDrawCap() {
-    setPendingAction("drawcap");
-    try {
-      const fees = await publicClient.estimateFeesPerGas();
-      writeContract({
-        address: contracts.insurancePool,
-        abi: insurancePoolAbi,
-        functionName: "setDrawCapBps",
-        args: [BigInt(Math.round(Number(newDrawCap)))],
-        maxFeePerGas: fees.maxFeePerGas * 2n,
-        maxPriorityFeePerGas: fees.maxPriorityFeePerGas,
-      });
-    } catch {
-      setPendingAction(null);
-    }
-  }
+  const bpsValid = (v) => v !== "" && Number.isInteger(Number(v)) && Number(v) > 0 && Number(v) <= 10000;
 
   const parsedWithdrawAmount = tryParseUnits(withdrawAmount, withdrawAssetDecimals);
   const withdrawValid = Boolean(withdrawAsset) && isAddress(withdrawTo) && parsedWithdrawAmount !== undefined;
+  const withdrawArgs = withdrawValid ? [withdrawAsset, withdrawTo, parsedWithdrawAmount] : null;
 
-  async function adminWithdraw() {
-    setPendingAction("withdraw");
-    try {
-      const fees = await publicClient.estimateFeesPerGas();
-      writeContract({
-        address: contracts.insurancePool,
-        abi: insurancePoolAbi,
-        functionName: "adminWithdraw",
-        args: [withdrawAsset, withdrawTo, parsedWithdrawAmount],
-        maxFeePerGas: fees.maxFeePerGas * 2n,
-        maxPriorityFeePerGas: fees.maxPriorityFeePerGas,
-      });
-    } catch {
-      setPendingAction(null);
-    }
-  }
+  // adminWithdraw has its own queue: the id binds asset, recipient and amount
+  // under a tag, so an approval cannot be repurposed (InsurancePool._withdrawId).
+  const withdrawId = withdrawArgs
+    ? keccak256(encodeAbiParameters(
+        [{ type: "string" }, { type: "address" }, { type: "address" }, { type: "uint256" }],
+        ["adminWithdraw", ...withdrawArgs]
+      ))
+    : undefined;
+
+  const refresh = () => { refetchReserves(); refetchLimits(); };
 
   return (
     <div>
       <p style={sectionLabelStyle}>Insurance pool</p>
       <div style={cardStyle}>
-        <p style={{ fontSize: 11, color: "var(--parch-dim)", margin: "0 0 12px" }}>
-          Current draw cap: {drawCapBps != null ? `${Number(drawCapBps) / 100}%` : "—"} of loan principal, per settlement
+        <p style={{ fontSize: 11, color: "var(--parch-dim)", margin: "0 0 12px", lineHeight: 1.5 }}>
+          A settlement draws the lesser of{" "}
+          <strong>{drawCapBps != null ? `${Number(drawCapBps) / 100}%` : "—"} of the loan's principal</strong> and{" "}
+          <strong>{maxDrawShareBps != null ? `${Number(maxDrawShareBps) / 100}%` : "—"} of the asset's reserve</strong>.
+          The second keeps one loss from emptying the pool for every lender behind it (item 8). Both
+          changes are timelocked in either direction.
         </p>
         {reserves.length > 0 && (
           <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 16, paddingBottom: 16, borderBottom: "1px solid var(--hairline)" }}>
@@ -1122,25 +1415,38 @@ function InsurancePoolPanel() {
           </div>
         )}
 
-        <Row2>
-          <Field label="New draw cap (bps, e.g. 1000 = 10%)">
-            <input value={newDrawCap} onChange={(e) => setNewDrawCap(e.target.value)} style={inputStyle} placeholder="1000" />
-          </Field>
-          <div style={{ alignSelf: "flex-end", marginBottom: 12 }}>
-            <ActionButton
-              label="Update draw cap"
-              primary={drawCapValueValid}
-              disabled={!drawCapValueValid}
-              disabledReason="Enter a value from 1 to 10000 bps."
-              loading={busy && pendingAction === "drawcap"}
-              onClick={updateDrawCap}
-            />
-          </div>
-        </Row2>
+        <Field label="New draw cap (bps of principal, e.g. 1000 = 10%)">
+          <input value={newDrawCap} onChange={(e) => setNewDrawCap(e.target.value)} style={inputStyle} placeholder="1000" />
+        </Field>
+        <TimelockedCall
+          contract={contracts.insurancePool}
+          abi={insurancePoolAbi}
+          call={bpsValid(newDrawCap) ? { functionName: "setDrawCapBps", args: [BigInt(newDrawCap)] } : null}
+          label="Update draw cap"
+          invalidReason="Enter a whole number from 1 to 10000 bps."
+          onDone={() => { setNewDrawCap(""); refresh(); }}
+        />
+
+        <div style={{ height: 14 }} />
+        <Field label="New reserve share per draw (bps of reserve, e.g. 500 = 5%)">
+          <input value={newDrawShare} onChange={(e) => setNewDrawShare(e.target.value)} style={inputStyle} placeholder="500" />
+        </Field>
+        <TimelockedCall
+          contract={contracts.insurancePool}
+          abi={insurancePoolAbi}
+          call={bpsValid(newDrawShare) ? { functionName: "setMaxDrawShareBps", args: [BigInt(newDrawShare)] } : null}
+          label="Update reserve share"
+          invalidReason="Enter a whole number from 1 to 10000 bps."
+          onDone={() => { setNewDrawShare(""); refresh(); }}
+        />
       </div>
 
       <div style={{ ...cardStyle, marginTop: 12 }}>
-        <p style={{ fontSize: 11, color: "var(--parch-dim)", margin: "0 0 12px" }}>Administrative withdrawal</p>
+        <p style={{ fontSize: 11, color: "var(--parch-dim)", margin: "0 0 12px", lineHeight: 1.5 }}>
+          Administrative withdrawal — always timelocked. The announcement binds asset, recipient and
+          amount together, and the amount is checked against the reserve again at execution, since
+          settlements may draw it down while the withdrawal waits.
+        </p>
         <Field label="Asset">
           <AssetSwitcher assets={assetList} chainId={chainId} value={withdrawAsset} onChange={setWithdrawAsset} />
         </Field>
@@ -1152,15 +1458,17 @@ function InsurancePoolPanel() {
             <input value={withdrawAmount} onChange={(e) => setWithdrawAmount(e.target.value)} style={inputStyle} placeholder="0.0" />
           </Field>
         </Row2>
-        <ActionButton
+        <TimelockedCall
+          contract={contracts.insurancePool}
+          abi={insurancePoolAbi}
+          call={withdrawArgs ? { functionName: "adminWithdraw", args: withdrawArgs } : null}
+          id={withdrawId}
+          queueCall={withdrawArgs ? { functionName: "queueAdminWithdraw", args: withdrawArgs } : undefined}
+          cancelCall={withdrawArgs ? { functionName: "cancelAdminWithdraw", args: withdrawArgs } : undefined}
           label="Withdraw"
-          primary={withdrawValid}
-          disabled={!withdrawValid}
-          disabledReason="Select an asset, a valid recipient address, and a valid amount."
-          loading={busy && pendingAction === "withdraw"}
-          onClick={adminWithdraw}
+          invalidReason="Select an asset, a valid recipient address, and a valid amount."
+          onDone={() => { setWithdrawTo(""); setWithdrawAmount(""); refresh(); }}
         />
-        {error && <p style={errorTextStyle}>{error.shortMessage || error.message}</p>}
       </div>
     </div>
   );
@@ -1171,7 +1479,6 @@ function InsurancePoolPanel() {
 function SettlementConfigPanel() {
   const chainId = useChainId();
   const contracts = getContractsForChain(chainId);
-  const publicClient = usePublicClient();
 
   const { data: configResults, refetch } = useReadContracts({
     contracts: [
@@ -1201,49 +1508,42 @@ function SettlementConfigPanel() {
     }
   }, [configResults, loaded]);
 
-  const { writeContract, data: hash, isPending, error, reset } = useWriteContract();
-  const { isLoading: isConfirming, isSuccess } = useWaitForTransactionReceipt({ hash });
-
-  useEffect(() => {
-    if (isSuccess) {
-      refetch();
-      reset();
-    }
-  }, [isSuccess]);
-
   const fields = [twapWindow, twapToleranceBps, swapBackGracePeriod, bountyRatePerHourBps, bountyCapBps];
-  const allValid = fields.every((v) => v !== "" && Number.isFinite(Number(v)) && Number(v) >= 0);
-  const busy = isPending || isConfirming;
+  const allValid = fields.every((v) => v !== "" && Number.isInteger(Number(v)) && Number(v) >= 0);
 
-  async function save() {
-    try {
-      const fees = await publicClient.estimateFeesPerGas();
-      writeContract({
-        address: contracts.assetRegistry,
-        abi: assetRegistryAbi,
-        functionName: "setSettlementConfig",
-        args: [
-          Math.round(Number(twapWindow)),
-          BigInt(Math.round(Number(twapToleranceBps))),
-          BigInt(Math.round(Number(swapBackGracePeriod))),
-          BigInt(Math.round(Number(bountyRatePerHourBps))),
-          BigInt(Math.round(Number(bountyCapBps))),
-        ],
-        maxFeePerGas: fees.maxFeePerGas * 2n,
-        maxPriorityFeePerGas: fees.maxPriorityFeePerGas,
-      });
-    } catch {
-      // writeContract's own error state surfaces below
-    }
-  }
+  // The contract's bounds (audit L-2), checked here so a refusal is explained
+  // before an announcement is spent on it.
+  const boundsReason =
+    !allValid ? "All five fields must be whole, non-negative numbers."
+    : Number(twapWindow) < 60 || Number(twapWindow) > 86400 ? "TWAP window must be 60 seconds to 1 day."
+    : Number(twapToleranceBps) < 1 || Number(twapToleranceBps) > 1000 ? "Tolerance must be 1–1000 bps."
+    : Number(swapBackGracePeriod) > 7 * 86400 ? "Grace period may be at most 7 days."
+    : Number(bountyRatePerHourBps) > 10000 ? "Bounty rate may be at most 10000 bps per hour."
+    : Number(bountyCapBps) > 1000 ? "Bounty cap may be at most 1000 bps."
+    : null;
+
+  const unchanged = configResults && fields.every((v, i) => configResults[i]?.result?.toString() === v);
+
+  const call = boundsReason || unchanged ? null : {
+    functionName: "setSettlementConfig",
+    args: [
+      Number(twapWindow),
+      BigInt(twapToleranceBps),
+      BigInt(swapBackGracePeriod),
+      BigInt(bountyRatePerHourBps),
+      BigInt(bountyCapBps),
+    ],
+  };
 
   return (
     <div>
       <p style={sectionLabelStyle}>Settlement configuration</p>
       <div style={cardStyle}>
-        <p style={{ fontSize: 11, color: "var(--parch-dim)", margin: "0 0 12px" }}>
-          All five values are set together, atomically, matching the contract's own design — a deliberate
-          statement of settlement policy, not a partial tweak.
+        <p style={{ fontSize: 11, color: "var(--parch-dim)", margin: "0 0 12px", lineHeight: 1.5 }}>
+          All five values are set together, atomically — a deliberate statement of settlement policy,
+          not a partial tweak. Every change is timelocked, because open vaults read all five at
+          settlement and every direction hurts someone. A longer TWAP window also needs every approved
+          pool to keep more history slots than the new window has seconds.
         </p>
         <Row2>
           <Field label="TWAP window (seconds)">
@@ -1264,15 +1564,14 @@ function SettlementConfigPanel() {
         <Field label="Bounty cap (bps)">
           <input value={bountyCapBps} onChange={(e) => setBountyCapBps(e.target.value)} style={inputStyle} />
         </Field>
-        <ActionButton
+        <TimelockedCall
+          contract={contracts.assetRegistry}
+          abi={assetRegistryAbi}
+          call={call}
           label="Save settlement configuration"
-          primary={allValid}
-          disabled={!allValid}
-          disabledReason="All five fields must be filled with valid non-negative numbers."
-          loading={busy}
-          onClick={save}
+          invalidReason={boundsReason || "These are the values already in force."}
+          onDone={() => { setLoaded(false); refetch(); }}
         />
-        {error && <p style={errorTextStyle}>{error.shortMessage || error.message}</p>}
       </div>
     </div>
   );
@@ -1342,6 +1641,8 @@ function PreflightReport({ preflight }) {
                 <span style={{ fontSize: 11, color: ok ? "var(--brass)" : "var(--brick)", textAlign: "right" }}>
                   {ok
                     ? `quotable${p.cardinality ? ` · cardinality ${p.cardinality}` : ""}`
+                    : p.status === "starvable"
+                    ? `quotable, but only ${p.cardinality} history slots — cannot be approved`
                     : `no TWAP history${p.cardinality ? ` · cardinality ${p.cardinality}` : ""}${hasLiquidity ? " · HAS LIQUIDITY" : ""}`}
                 </span>
               </div>

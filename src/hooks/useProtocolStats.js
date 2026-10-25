@@ -71,6 +71,10 @@ export function useProtocolStats() {
       { address: insurancePool, abi: INSURANCE_POOL_ABI, functionName: "drawCapBps" },
       { address: vaultFactory, abi: VAULT_FACTORY_ABI, functionName: "insuranceSkimRateBps" },
       { address: vaultFactory, abi: VAULT_FACTORY_ABI, functionName: "totalVaults" },
+      // Item 8: a single settlement may also take at most this share of the
+      // asset's reserve. Appended rather than inserted so the indices above
+      // keep their meaning.
+      { address: insurancePool, abi: INSURANCE_POOL_ABI, functionName: "maxDrawShareBps" },
     ],
     query: { enabled: isConfigured, refetchInterval: 30000 },
   });
@@ -151,6 +155,7 @@ export function useProtocolStats() {
         bountyCapBps: configResults[4]?.result,
         drawCapBps: configResults[5]?.result,
         insuranceSkimRateBps: configResults[6]?.result,
+        maxDrawShareBps: configResults[8]?.result,
         totalVaults: totalVaultsCount,
       }
     : null;

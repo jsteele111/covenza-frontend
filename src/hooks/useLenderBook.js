@@ -11,6 +11,7 @@ const READS = [
   "settledLenderPayout",
   "settledFee",
   "settledInsuranceDraw",
+  "settledInKind",
 ];
 
 /**
@@ -27,6 +28,11 @@ const READS = [
  *      first and the insurance pool second. That claim is only worth anything
  *      if it is measured, so this measures it rather than reporting the
  *      headline interest and leaving the failure mode unspoken.
+ *
+ *      Loans settled IN KIND are counted apart (audit I-3). The lender received
+ *      assets the vault could not sell, valued at the TWAP, and those are not in
+ *      settledLenderPayout — so cash alone would report a shortfall the assets
+ *      may well have covered. They are listed, not scored.
  */
 export function useLenderBook(vaultAddresses) {
   const chainId = useChainId();
@@ -63,6 +69,7 @@ export function useLenderBook(vaultAddresses) {
           interestEarned: 0n,
           insuranceDrawn: 0n,
           shortfall: 0n,
+          inKindCount: 0,
         });
       }
       const row = byAsset.get(symbol);
@@ -78,6 +85,11 @@ export function useLenderBook(vaultAddresses) {
       }
 
       row.settledCount += 1;
+
+      if (get("settledInKind") === true) {
+        row.inKindCount += 1;
+        return;
+      }
 
       const payout = get("settledLenderPayout") ?? 0n;
       const fee = get("settledFee") ?? 0n;

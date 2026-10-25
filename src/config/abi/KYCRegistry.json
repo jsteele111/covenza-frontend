@@ -1,0 +1,999 @@
+[
+ {
+  "inputs": [
+   {
+    "internalType": "address",
+    "name": "_operator",
+    "type": "address"
+   },
+   {
+    "internalType": "address",
+    "name": "_verifierKey",
+    "type": "address"
+   },
+   {
+    "internalType": "uint256",
+    "name": "_timelockDelay",
+    "type": "uint256"
+   }
+  ],
+  "stateMutability": "nonpayable",
+  "type": "constructor"
+ },
+ {
+  "inputs": [],
+  "name": "ECDSAInvalidSignature",
+  "type": "error"
+ },
+ {
+  "inputs": [
+   {
+    "internalType": "uint256",
+    "name": "length",
+    "type": "uint256"
+   }
+  ],
+  "name": "ECDSAInvalidSignatureLength",
+  "type": "error"
+ },
+ {
+  "inputs": [
+   {
+    "internalType": "bytes32",
+    "name": "s",
+    "type": "bytes32"
+   }
+  ],
+  "name": "ECDSAInvalidSignatureS",
+  "type": "error"
+ },
+ {
+  "inputs": [],
+  "name": "InvalidShortString",
+  "type": "error"
+ },
+ {
+  "inputs": [
+   {
+    "internalType": "string",
+    "name": "str",
+    "type": "string"
+   }
+  ],
+  "name": "StringTooLong",
+  "type": "error"
+ },
+ {
+  "anonymous": false,
+  "inputs": [
+   {
+    "indexed": true,
+    "internalType": "bytes32",
+    "name": "id",
+    "type": "bytes32"
+   }
+  ],
+  "name": "ActionCancelled",
+  "type": "event"
+ },
+ {
+  "anonymous": false,
+  "inputs": [
+   {
+    "indexed": true,
+    "internalType": "bytes32",
+    "name": "id",
+    "type": "bytes32"
+   }
+  ],
+  "name": "ActionExecuted",
+  "type": "event"
+ },
+ {
+  "anonymous": false,
+  "inputs": [
+   {
+    "indexed": true,
+    "internalType": "bytes32",
+    "name": "id",
+    "type": "bytes32"
+   },
+   {
+    "indexed": false,
+    "internalType": "uint256",
+    "name": "executableAt",
+    "type": "uint256"
+   }
+  ],
+  "name": "ActionQueued",
+  "type": "event"
+ },
+ {
+  "anonymous": false,
+  "inputs": [
+   {
+    "indexed": true,
+    "internalType": "address",
+    "name": "wallet",
+    "type": "address"
+   },
+   {
+    "indexed": false,
+    "internalType": "uint256",
+    "name": "timestamp",
+    "type": "uint256"
+   }
+  ],
+  "name": "AddressRevoked",
+  "type": "event"
+ },
+ {
+  "anonymous": false,
+  "inputs": [
+   {
+    "indexed": true,
+    "internalType": "address",
+    "name": "wallet",
+    "type": "address"
+   },
+   {
+    "indexed": false,
+    "internalType": "uint256",
+    "name": "timestamp",
+    "type": "uint256"
+   },
+   {
+    "indexed": false,
+    "internalType": "bool",
+    "name": "viaSignature",
+    "type": "bool"
+   }
+  ],
+  "name": "AddressVerified",
+  "type": "event"
+ },
+ {
+  "anonymous": false,
+  "inputs": [
+   {
+    "indexed": true,
+    "internalType": "address",
+    "name": "wallet",
+    "type": "address"
+   },
+   {
+    "indexed": true,
+    "internalType": "address",
+    "name": "attester",
+    "type": "address"
+   },
+   {
+    "indexed": false,
+    "internalType": "uint256",
+    "name": "claims",
+    "type": "uint256"
+   },
+   {
+    "indexed": false,
+    "internalType": "uint256",
+    "name": "validUntil",
+    "type": "uint256"
+   }
+  ],
+  "name": "AttestationAccepted",
+  "type": "event"
+ },
+ {
+  "anonymous": false,
+  "inputs": [
+   {
+    "indexed": true,
+    "internalType": "address",
+    "name": "key",
+    "type": "address"
+   },
+   {
+    "indexed": false,
+    "internalType": "string",
+    "name": "name",
+    "type": "string"
+   },
+   {
+    "indexed": false,
+    "internalType": "string",
+    "name": "url",
+    "type": "string"
+   }
+  ],
+  "name": "AttesterAdded",
+  "type": "event"
+ },
+ {
+  "anonymous": false,
+  "inputs": [
+   {
+    "indexed": true,
+    "internalType": "address",
+    "name": "key",
+    "type": "address"
+   }
+  ],
+  "name": "AttesterRemoved",
+  "type": "event"
+ },
+ {
+  "anonymous": false,
+  "inputs": [],
+  "name": "EIP712DomainChanged",
+  "type": "event"
+ },
+ {
+  "anonymous": false,
+  "inputs": [
+   {
+    "indexed": true,
+    "internalType": "address",
+    "name": "wallet",
+    "type": "address"
+   },
+   {
+    "indexed": false,
+    "internalType": "uint256",
+    "name": "claims",
+    "type": "uint256"
+   },
+   {
+    "indexed": false,
+    "internalType": "uint256",
+    "name": "validUntil",
+    "type": "uint256"
+   },
+   {
+    "indexed": true,
+    "internalType": "bytes32",
+    "name": "caseRef",
+    "type": "bytes32"
+   }
+  ],
+  "name": "ManualGrant",
+  "type": "event"
+ },
+ {
+  "anonymous": false,
+  "inputs": [
+   {
+    "indexed": true,
+    "internalType": "address",
+    "name": "from",
+    "type": "address"
+   },
+   {
+    "indexed": true,
+    "internalType": "address",
+    "name": "to",
+    "type": "address"
+   }
+  ],
+  "name": "OperatorTransferStarted",
+  "type": "event"
+ },
+ {
+  "anonymous": false,
+  "inputs": [
+   {
+    "indexed": true,
+    "internalType": "address",
+    "name": "previousOperator",
+    "type": "address"
+   },
+   {
+    "indexed": true,
+    "internalType": "address",
+    "name": "newOperator",
+    "type": "address"
+   }
+  ],
+  "name": "OperatorUpdated",
+  "type": "event"
+ },
+ {
+  "inputs": [],
+  "name": "ATTESTATION_TYPEHASH",
+  "outputs": [
+   {
+    "internalType": "bytes32",
+    "name": "",
+    "type": "bytes32"
+   }
+  ],
+  "stateMutability": "view",
+  "type": "function"
+ },
+ {
+  "inputs": [],
+  "name": "EXECUTION_WINDOW",
+  "outputs": [
+   {
+    "internalType": "uint256",
+    "name": "",
+    "type": "uint256"
+   }
+  ],
+  "stateMutability": "view",
+  "type": "function"
+ },
+ {
+  "inputs": [],
+  "name": "MANUAL_COOLDOWN",
+  "outputs": [
+   {
+    "internalType": "uint256",
+    "name": "",
+    "type": "uint256"
+   }
+  ],
+  "stateMutability": "view",
+  "type": "function"
+ },
+ {
+  "inputs": [],
+  "name": "MANUAL_RATE_LIMIT",
+  "outputs": [
+   {
+    "internalType": "uint256",
+    "name": "",
+    "type": "uint256"
+   }
+  ],
+  "stateMutability": "view",
+  "type": "function"
+ },
+ {
+  "inputs": [],
+  "name": "MANUAL_RATE_WINDOW",
+  "outputs": [
+   {
+    "internalType": "uint256",
+    "name": "",
+    "type": "uint256"
+   }
+  ],
+  "stateMutability": "view",
+  "type": "function"
+ },
+ {
+  "inputs": [],
+  "name": "MANUAL_VALIDITY",
+  "outputs": [
+   {
+    "internalType": "uint256",
+    "name": "",
+    "type": "uint256"
+   }
+  ],
+  "stateMutability": "view",
+  "type": "function"
+ },
+ {
+  "inputs": [],
+  "name": "MAX_ATTESTATION_VALIDITY",
+  "outputs": [
+   {
+    "internalType": "uint256",
+    "name": "",
+    "type": "uint256"
+   }
+  ],
+  "stateMutability": "view",
+  "type": "function"
+ },
+ {
+  "inputs": [],
+  "name": "acceptOperator",
+  "outputs": [],
+  "stateMutability": "nonpayable",
+  "type": "function"
+ },
+ {
+  "inputs": [
+   {
+    "internalType": "address",
+    "name": "_key",
+    "type": "address"
+   },
+   {
+    "internalType": "string",
+    "name": "_name",
+    "type": "string"
+   },
+   {
+    "internalType": "string",
+    "name": "_url",
+    "type": "string"
+   }
+  ],
+  "name": "addAttester",
+  "outputs": [],
+  "stateMutability": "nonpayable",
+  "type": "function"
+ },
+ {
+  "inputs": [],
+  "name": "allAttesters",
+  "outputs": [
+   {
+    "internalType": "address[]",
+    "name": "",
+    "type": "address[]"
+   }
+  ],
+  "stateMutability": "view",
+  "type": "function"
+ },
+ {
+  "inputs": [
+   {
+    "internalType": "address",
+    "name": "",
+    "type": "address"
+   }
+  ],
+  "name": "attestedBy",
+  "outputs": [
+   {
+    "internalType": "address",
+    "name": "",
+    "type": "address"
+   }
+  ],
+  "stateMutability": "view",
+  "type": "function"
+ },
+ {
+  "inputs": [
+   {
+    "internalType": "address",
+    "name": "",
+    "type": "address"
+   }
+  ],
+  "name": "attesters",
+  "outputs": [
+   {
+    "internalType": "bool",
+    "name": "recognised",
+    "type": "bool"
+   },
+   {
+    "internalType": "string",
+    "name": "name",
+    "type": "string"
+   },
+   {
+    "internalType": "string",
+    "name": "url",
+    "type": "string"
+   },
+   {
+    "internalType": "uint256",
+    "name": "addedAt",
+    "type": "uint256"
+   }
+  ],
+  "stateMutability": "view",
+  "type": "function"
+ },
+ {
+  "inputs": [
+   {
+    "internalType": "bytes32",
+    "name": "_id",
+    "type": "bytes32"
+   }
+  ],
+  "name": "cancelAction",
+  "outputs": [],
+  "stateMutability": "nonpayable",
+  "type": "function"
+ },
+ {
+  "inputs": [
+   {
+    "internalType": "address",
+    "name": "_key",
+    "type": "address"
+   },
+   {
+    "internalType": "string",
+    "name": "_name",
+    "type": "string"
+   },
+   {
+    "internalType": "string",
+    "name": "_url",
+    "type": "string"
+   }
+  ],
+  "name": "cancelAddAttester",
+  "outputs": [],
+  "stateMutability": "nonpayable",
+  "type": "function"
+ },
+ {
+  "inputs": [],
+  "name": "cancelOperatorTransfer",
+  "outputs": [],
+  "stateMutability": "nonpayable",
+  "type": "function"
+ },
+ {
+  "inputs": [
+   {
+    "internalType": "address",
+    "name": "_oldKey",
+    "type": "address"
+   },
+   {
+    "internalType": "address",
+    "name": "_newKey",
+    "type": "address"
+   }
+  ],
+  "name": "cancelRotateAttester",
+  "outputs": [],
+  "stateMutability": "nonpayable",
+  "type": "function"
+ },
+ {
+  "inputs": [],
+  "name": "eip712Domain",
+  "outputs": [
+   {
+    "internalType": "bytes1",
+    "name": "fields",
+    "type": "bytes1"
+   },
+   {
+    "internalType": "string",
+    "name": "name",
+    "type": "string"
+   },
+   {
+    "internalType": "string",
+    "name": "version",
+    "type": "string"
+   },
+   {
+    "internalType": "uint256",
+    "name": "chainId",
+    "type": "uint256"
+   },
+   {
+    "internalType": "address",
+    "name": "verifyingContract",
+    "type": "address"
+   },
+   {
+    "internalType": "bytes32",
+    "name": "salt",
+    "type": "bytes32"
+   },
+   {
+    "internalType": "uint256[]",
+    "name": "extensions",
+    "type": "uint256[]"
+   }
+  ],
+  "stateMutability": "view",
+  "type": "function"
+ },
+ {
+  "inputs": [
+   {
+    "internalType": "bytes32",
+    "name": "_id",
+    "type": "bytes32"
+   }
+  ],
+  "name": "executionDeadline",
+  "outputs": [
+   {
+    "internalType": "uint256",
+    "name": "",
+    "type": "uint256"
+   }
+  ],
+  "stateMutability": "view",
+  "type": "function"
+ },
+ {
+  "inputs": [
+   {
+    "internalType": "address",
+    "name": "_wallet",
+    "type": "address"
+   },
+   {
+    "internalType": "uint256",
+    "name": "_requiredClaims",
+    "type": "uint256"
+   }
+  ],
+  "name": "isEligible",
+  "outputs": [
+   {
+    "internalType": "bool",
+    "name": "",
+    "type": "bool"
+   }
+  ],
+  "stateMutability": "view",
+  "type": "function"
+ },
+ {
+  "inputs": [
+   {
+    "internalType": "bytes32",
+    "name": "_id",
+    "type": "bytes32"
+   }
+  ],
+  "name": "isExecutable",
+  "outputs": [
+   {
+    "internalType": "bool",
+    "name": "",
+    "type": "bool"
+   }
+  ],
+  "stateMutability": "view",
+  "type": "function"
+ },
+ {
+  "inputs": [
+   {
+    "internalType": "address",
+    "name": "",
+    "type": "address"
+   }
+  ],
+  "name": "isVerified",
+  "outputs": [
+   {
+    "internalType": "bool",
+    "name": "",
+    "type": "bool"
+   }
+  ],
+  "stateMutability": "view",
+  "type": "function"
+ },
+ {
+  "inputs": [
+   {
+    "internalType": "address",
+    "name": "",
+    "type": "address"
+   }
+  ],
+  "name": "lastManualGrantAt",
+  "outputs": [
+   {
+    "internalType": "uint256",
+    "name": "",
+    "type": "uint256"
+   }
+  ],
+  "stateMutability": "view",
+  "type": "function"
+ },
+ {
+  "inputs": [
+   {
+    "internalType": "address",
+    "name": "",
+    "type": "address"
+   }
+  ],
+  "name": "nonces",
+  "outputs": [
+   {
+    "internalType": "uint256",
+    "name": "",
+    "type": "uint256"
+   }
+  ],
+  "stateMutability": "view",
+  "type": "function"
+ },
+ {
+  "inputs": [],
+  "name": "operator",
+  "outputs": [
+   {
+    "internalType": "address",
+    "name": "",
+    "type": "address"
+   }
+  ],
+  "stateMutability": "view",
+  "type": "function"
+ },
+ {
+  "inputs": [],
+  "name": "pendingOperator",
+  "outputs": [
+   {
+    "internalType": "address",
+    "name": "",
+    "type": "address"
+   }
+  ],
+  "stateMutability": "view",
+  "type": "function"
+ },
+ {
+  "inputs": [
+   {
+    "internalType": "bytes32",
+    "name": "_id",
+    "type": "bytes32"
+   }
+  ],
+  "name": "queueAction",
+  "outputs": [],
+  "stateMutability": "nonpayable",
+  "type": "function"
+ },
+ {
+  "inputs": [
+   {
+    "internalType": "address",
+    "name": "_key",
+    "type": "address"
+   },
+   {
+    "internalType": "string",
+    "name": "_name",
+    "type": "string"
+   },
+   {
+    "internalType": "string",
+    "name": "_url",
+    "type": "string"
+   }
+  ],
+  "name": "queueAddAttester",
+  "outputs": [],
+  "stateMutability": "nonpayable",
+  "type": "function"
+ },
+ {
+  "inputs": [
+   {
+    "internalType": "address",
+    "name": "_oldKey",
+    "type": "address"
+   },
+   {
+    "internalType": "address",
+    "name": "_newKey",
+    "type": "address"
+   }
+  ],
+  "name": "queueRotateAttester",
+  "outputs": [],
+  "stateMutability": "nonpayable",
+  "type": "function"
+ },
+ {
+  "inputs": [
+   {
+    "internalType": "bytes32",
+    "name": "",
+    "type": "bytes32"
+   }
+  ],
+  "name": "queuedAt",
+  "outputs": [
+   {
+    "internalType": "uint256",
+    "name": "",
+    "type": "uint256"
+   }
+  ],
+  "stateMutability": "view",
+  "type": "function"
+ },
+ {
+  "inputs": [
+   {
+    "internalType": "address",
+    "name": "_key",
+    "type": "address"
+   }
+  ],
+  "name": "removeAttester",
+  "outputs": [],
+  "stateMutability": "nonpayable",
+  "type": "function"
+ },
+ {
+  "inputs": [
+   {
+    "internalType": "address",
+    "name": "_wallet",
+    "type": "address"
+   }
+  ],
+  "name": "revoke",
+  "outputs": [],
+  "stateMutability": "nonpayable",
+  "type": "function"
+ },
+ {
+  "inputs": [
+   {
+    "internalType": "address",
+    "name": "_oldKey",
+    "type": "address"
+   },
+   {
+    "internalType": "address",
+    "name": "_newKey",
+    "type": "address"
+   }
+  ],
+  "name": "rotateAttester",
+  "outputs": [],
+  "stateMutability": "nonpayable",
+  "type": "function"
+ },
+ {
+  "inputs": [
+   {
+    "internalType": "bytes32",
+    "name": "_id",
+    "type": "bytes32"
+   }
+  ],
+  "name": "timeUntilExecutable",
+  "outputs": [
+   {
+    "internalType": "uint256",
+    "name": "",
+    "type": "uint256"
+   }
+  ],
+  "stateMutability": "view",
+  "type": "function"
+ },
+ {
+  "inputs": [],
+  "name": "timelockDelay",
+  "outputs": [
+   {
+    "internalType": "uint256",
+    "name": "",
+    "type": "uint256"
+   }
+  ],
+  "stateMutability": "view",
+  "type": "function"
+ },
+ {
+  "inputs": [
+   {
+    "internalType": "address",
+    "name": "_newOperator",
+    "type": "address"
+   }
+  ],
+  "name": "transferOperator",
+  "outputs": [],
+  "stateMutability": "nonpayable",
+  "type": "function"
+ },
+ {
+  "inputs": [
+   {
+    "internalType": "address",
+    "name": "_wallet",
+    "type": "address"
+   }
+  ],
+  "name": "verificationOf",
+  "outputs": [
+   {
+    "components": [
+     {
+      "internalType": "address",
+      "name": "attester",
+      "type": "address"
+     },
+     {
+      "internalType": "uint256",
+      "name": "claims",
+      "type": "uint256"
+     },
+     {
+      "internalType": "uint256",
+      "name": "validUntil",
+      "type": "uint256"
+     },
+     {
+      "internalType": "bool",
+      "name": "manual",
+      "type": "bool"
+     },
+     {
+      "internalType": "bytes32",
+      "name": "caseRef",
+      "type": "bytes32"
+     }
+    ],
+    "internalType": "struct KYCRegistry.Verification",
+    "name": "",
+    "type": "tuple"
+   }
+  ],
+  "stateMutability": "view",
+  "type": "function"
+ },
+ {
+  "inputs": [
+   {
+    "internalType": "address",
+    "name": "_wallet",
+    "type": "address"
+   },
+   {
+    "internalType": "uint256",
+    "name": "_claims",
+    "type": "uint256"
+   },
+   {
+    "internalType": "bytes32",
+    "name": "_caseRef",
+    "type": "bytes32"
+   }
+  ],
+  "name": "verify",
+  "outputs": [],
+  "stateMutability": "nonpayable",
+  "type": "function"
+ },
+ {
+  "inputs": [
+   {
+    "internalType": "address",
+    "name": "_wallet",
+    "type": "address"
+   },
+   {
+    "internalType": "uint256",
+    "name": "_claims",
+    "type": "uint256"
+   },
+   {
+    "internalType": "uint256",
+    "name": "_validUntil",
+    "type": "uint256"
+   },
+   {
+    "internalType": "uint256",
+    "name": "_deadline",
+    "type": "uint256"
+   },
+   {
+    "internalType": "bytes",
+    "name": "_signature",
+    "type": "bytes"
+   }
+  ],
+  "name": "verifyWithSignature",
+  "outputs": [],
+  "stateMutability": "nonpayable",
+  "type": "function"
+ }
+]

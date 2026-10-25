@@ -15,8 +15,9 @@ const DAY = 86400;
 /**
  * The board of live mandates a borrower can fill.
  *
- * Every mandate shows its FILLABLE size — min(allowance, balance, offer) read
- * live — rather than what the lender advertised. A lender's capital never
+ * Every mandate shows its FILLABLE size — min(allowance, balance, per-fill
+ * maximum, remaining capacity) read live — rather than what the lender
+ * advertised. A lender's capital never
  * leaves their wallet until a fill, and an allowance can be revoked for free,
  * so a board that displayed the offer would list liquidity that isn't there.
  *
@@ -24,6 +25,15 @@ const DAY = 86400;
  * mandate prices those two axes rather than offering a range. Under a range,
  * the longest term and smallest deposit is what everyone picks; here it is the
  * most expensive combination on the surface.
+ *
+ * October 2026 (frozen contracts):
+ *  - fillMandate takes the borrower's APR limit (audit L-6). The limit is the
+ *    contract's own quoteMandateApr, read at the moment of confirming, so a
+ *    tier change between quote and fill reverts the fill instead of charging
+ *    more than was shown.
+ *  - A wallet's own mandates are hidden: the factory refuses a loan whose
+ *    lender and borrower are the same address.
+ *  - Each mandate shows what is left of its total capacity.
  */
 export function MandateBoard({ onFilled }) {
   const { address } = useAccount();
@@ -43,8 +53,11 @@ export function MandateBoard({ onFilled }) {
     return <EmptyState message="Loading mandates…" />;
   }
 
+  const me = (address || "").toLowerCase();
   const fillable = mandates.filter(
-    (m) => !m.isTargeted || m.permittedBorrower.toLowerCase() === (address || "").toLowerCase()
+    (m) =>
+      m.lender.toLowerCase() !== me &&
+      (!m.isTargeted || m.permittedBorrower.toLowerCase() === me)
   );
 
   if (fillable.length === 0) {
@@ -89,6 +102,11 @@ function MandateCard({ mandate: m, expanded, onToggle, contracts, publicClient, 
   // step machine and report a loan that does not exist.
   const [reverted, setReverted] = useState(false);
 
+  // The APR the contract quoted when the borrower confirmed, passed to
+  // fillMandate as the most they will pay. Held in state so the button can
+  // show the figure being agreed to.
+  const [agreedAprBps, setAgreedAprBps] = useState(null);
+
   useEffect(() => {
     if (!receipt) return;
     if (receipt.status !== "success") {
@@ -102,6 +120,7 @@ function MandateCard({ mandate: m, expanded, onToggle, contracts, publicClient, 
       setStep("approved");
     } else if (step === "filling") {
       setStep("idle");
+      setAgreedAprBps(null);
       onFilled();
     }
     reset();
@@ -114,9 +133,15 @@ function MandateCard({ mandate: m, expanded, onToggle, contracts, publicClient, 
   const depositBps = Math.round(Number(depositPct) * 100);
 
   const depositAmount =
-    parsedPrincipal !== undefined && Number.isFinite(depositBps)
+    parsedPrincipal !== undefined && Number.isFinite(depositBps) && depositBps >= 0
       ? (parsedPrincipal * BigInt(depositBps)) / 10000n
       : undefined;
+
+  // The deposit percentage AS THE CONTRACT WILL SEE IT. fillMandate recomputes
+  // it as deposit * 10000 / principal, which after the rounding above can be a
+  // basis point below what was typed — and the APR is priced from that figure.
+  const effectiveDepositBps =
+    depositAmount !== undefined && parsedPrincipal ? Number((depositAmount * 10000n) / parsedPrincipal) : depositBps;
 
   // The protocol's own deposit floor, which is INDEPENDENT of the mandate's
   // minimum and usually higher at the long end. It scales with the square root
@@ -137,10 +162,11 @@ function MandateCard({ mandate: m, expanded, onToggle, contracts, publicClient, 
     parsedPrincipal !== undefined &&
     parsedPrincipal >= m.minPrincipal &&
     parsedPrincipal <= m.maxPrincipal &&
+    parsedPrincipal <= m.remaining &&
     parsedPrincipal <= m.fillable;
 
   // Both floors bind; the effective one is whichever is higher.
-  const meetsMandate = depositBps >= m.minDepositBps;
+  const meetsMandate = effectiveDepositBps >= m.minDepositBps;
   const meetsFloor =
     tierFloor === undefined || depositAmount === undefined || depositAmount >= tierFloor;
   const floorPct =
@@ -161,10 +187,12 @@ function MandateCard({ mandate: m, expanded, onToggle, contracts, publicClient, 
       : 0;
   const bindingBps = Math.max(m.minDepositBps, floorBpsNum);
 
-  const apr = previewMandateApr(m, termSeconds, depositBps, bindingBps);
+  const apr = previewMandateApr(m, termSeconds, effectiveDepositBps, bindingBps);
 
   const reason = !parsedPrincipal
     ? "Enter an amount to borrow."
+    : parsedPrincipal > m.remaining
+    ? `Only ${formatTokenAmount(m.remaining, m.decimals)} ${m.symbol} of this mandate's capacity is left.`
     : parsedPrincipal > m.fillable
     ? `Only ${formatTokenAmount(m.fillable, m.decimals)} ${m.symbol} is currently fillable.`
     : !sizeValid
@@ -209,12 +237,24 @@ function MandateCard({ mandate: m, expanded, onToggle, contracts, publicClient, 
   async function confirmFill() {
     try {
       const fees = await publicClient.estimateFeesPerGas();
+
+      // The contract's own price for these exact terms, read now. Passed as
+      // the limit: if the registry's tier settings move before this is mined,
+      // the fill reverts rather than charging a higher rate (audit L-6).
+      const quoted = await publicClient.readContract({
+        address: contracts.vaultFactory,
+        abi: factoryAbi,
+        functionName: "quoteMandateApr",
+        args: [BigInt(m.id), BigInt(termSeconds), BigInt(effectiveDepositBps)],
+      });
+      setAgreedAprBps(Number(quoted));
+
       setStep("filling");
       writeContract({
         address: contracts.vaultFactory,
         abi: factoryAbi,
         functionName: "fillMandate",
-        args: [BigInt(m.id), parsedPrincipal, BigInt(termSeconds), true, depositAmount],
+        args: [BigInt(m.id), parsedPrincipal, BigInt(termSeconds), true, depositAmount, quoted],
         maxFeePerGas: fees.maxFeePerGas * 2n,
         maxPriorityFeePerGas: fees.maxPriorityFeePerGas,
       });
@@ -246,6 +286,10 @@ function MandateCard({ mandate: m, expanded, onToggle, contracts, publicClient, 
           <p style={{ fontSize: 13, color: "var(--parch)", margin: "0 0 4px" }}>
             {formatTokenAmount(m.fillable, m.decimals)} {m.symbol}{" "}
             <span style={{ fontSize: 11, color: "var(--parch-dim)" }}>available now</span>
+          </p>
+          <p style={{ fontSize: 11, color: "var(--parch-dim)", margin: "0 0 2px" }}>
+            {formatTokenAmount(m.remaining, m.decimals)} of {formatTokenAmount(m.totalCapacity, m.decimals)}{" "}
+            {m.symbol} capacity left · up to {formatTokenAmount(m.maxPrincipal, m.decimals)} per loan
           </p>
           <p style={{ fontSize: 11, color: "var(--parch-dim)", margin: 0 }}>
             from {shortAddress(m.lender)} · {m.minTermSeconds / DAY}–{m.maxTermSeconds / DAY} days ·
@@ -292,6 +336,9 @@ function MandateCard({ mandate: m, expanded, onToggle, contracts, publicClient, 
                 value={`${formatTokenAmount(tierFloor, m.decimals)} ${m.symbol}${floorPct ? ` (${floorPct}%)` : ""}`}
               />
             )}
+            {agreedAprBps !== null && (
+              <Line label="Most you agree to pay" value={`${(agreedAprBps / 100).toFixed(2)}% APR`} />
+            )}
             <Line
               label="Mandate expires"
               value={expiresIn > 0 ? `in ${Math.floor(expiresIn / 3600)}h ${Math.floor((expiresIn % 3600) / 60)}m` : "expired"}
@@ -314,9 +361,9 @@ function MandateCard({ mandate: m, expanded, onToggle, contracts, publicClient, 
 
           {reverted && !error && (
             <p style={{ fontSize: 12, color: "var(--brick)", marginTop: 8 }}>
-              The transaction was mined but reverted — nothing moved. The mandate's
-              terms may have changed, or the lender's allowance may have been withdrawn,
-              since this quote was read.
+              The transaction was mined but reverted — nothing moved. The rate may have
+              risen above the one you agreed to, the mandate may have filled up, or the
+              lender's allowance may have been withdrawn since this quote was read.
             </p>
           )}
 

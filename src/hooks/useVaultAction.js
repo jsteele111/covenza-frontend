@@ -4,9 +4,13 @@ import { VAULT_ABI } from "../config/abis.js";
 // abis.js already exports pre-parsed ABIs — do not re-wrap in parseAbi().
 const vaultAbi = VAULT_ABI;
 
-// Wraps a single Vault write function (payDeposit, supplyToAave, settle)
-// with pending/confirming/success state, so components don't each
-// re-implement the same wagmi plumbing.
+// Wraps a single Vault write function (payDeposit, swap, swapBack, settle,
+// settleInKind, cancel, claim) with pending/confirming/success state, so
+// components don't each re-implement the same wagmi plumbing.
+//
+// isSuccess means the receipt arrived AND the transaction succeeded. wagmi's
+// own isSuccess is true for a mined-but-reverted transaction too, which would
+// let a component report an action that did not happen.
 //
 // Explicitly overrides gas fees with a 2x safety margin on top of the
 // current base fee. Arbitrum's base fee shifts slightly between blocks,
@@ -18,9 +22,11 @@ export function useVaultAction() {
   const publicClient = usePublicClient();
   const { writeContract, data: hash, isPending, error, reset } = useWriteContract();
 
-  const { isLoading: isConfirming, isSuccess } = useWaitForTransactionReceipt({
+  const { data: receipt, isLoading: isConfirming } = useWaitForTransactionReceipt({
     hash,
   });
+  const isSuccess = receipt?.status === "success";
+  const reverted = receipt?.status === "reverted";
 
   async function call(vaultAddress, functionName, args = [], value = undefined) {
     const fees = await publicClient.estimateFeesPerGas();
@@ -36,5 +42,5 @@ export function useVaultAction() {
     });
   }
 
-  return { call, hash, isPending, isConfirming, isSuccess, error, reset };
+  return { call, hash, isPending, isConfirming, isSuccess, reverted, error, reset };
 }

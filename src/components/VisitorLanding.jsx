@@ -50,7 +50,7 @@ export function VisitorLanding() {
           to="/lender"
           title="Lend"
           body="Publish terms a borrower can take without asking you first, or originate directly for a borrower you know. Your capital stays in your wallet until a loan is filled."
-          note="No verification required"
+          note="Sanctions screening required"
         />
         <ActionCard
           to="/borrower"
@@ -135,8 +135,9 @@ function RiskNotice() {
       </p>
       <p style={{ fontSize: 12.5, color: "var(--parch-dim)", margin: 0, lineHeight: 1.6 }}>
         <Em>Lenders</Em> are protected by the borrower's deposit and then by a shared insurance
-        pool — but the pool pays a capped share of principal per loan, and a loss beyond that is
-        the lender's. The cap is shown before you commit to any loan.
+        pool — but the pool pays at most a capped share of the loan's principal, and of its own
+        reserve, per loan, and a loss beyond that is the lender's. Both caps are shown before you
+        commit to any loan.
       </p>
     </div>
   );

@@ -29,6 +29,15 @@ import { getContractsForChain, symbolForToken } from "../config/contracts.js";
  * of 1, so observe() reverts and settlement could never quote it. That is the
  * combination this exists to surface, and it is not hypothetical: AAPL/WETH
  * at 0.05% on Robinhood Chain holds 7.25e19 liquidity with cardinality 1.
+ *
+ * Since audit KRAIT-004 there is a second, stricter test, and this one IS a
+ * hard gate in the contract: AssetRegistry.setPoolFeeTier refuses a pool
+ * whose ring keeps no more history slots than the TWAP window has seconds.
+ * Such a pool can quote today and still be made unreadable at will — anyone
+ * can fill its slots with fresh observations — which would block every exit
+ * from a vault holding it. Reported here as "starvable" so the operator knows
+ * before the approval transaction reverts, and what to do about it: grow the
+ * ring (increaseObservationCardinalityNext) past the window.
  */
 
 export const FEE_TIERS = [500, 3000, 10000];
@@ -142,8 +151,15 @@ export function useAssetPreflight(candidate) {
     const hasPool = Boolean(c.pool) && c.pool !== ZERO;
     const q = hasPool ? quoteByPool.get(c.pool) : undefined;
 
+    // "quotable" now means the registry would approve it: history available
+    // AND more slots than the window has seconds.
     let status = "no-pool";
-    if (hasPool) status = q?.quotable ? "quotable" : "no-twap";
+    if (hasPool) {
+      if (!q?.quotable) status = "no-twap";
+      else if (q?.cardinality !== undefined && twapWindow !== undefined && q.cardinality <= Number(twapWindow)) {
+        status = "starvable";
+      } else status = "quotable";
+    }
 
     return {
       counterparty: c.other,
@@ -158,6 +174,7 @@ export function useAssetPreflight(candidate) {
   });
 
   const quotablePairs = pairs.filter((p) => p.status === "quotable");
+  const starvablePairs = pairs.filter((p) => p.status === "starvable");
 
   // A pool that exists and holds liquidity but cannot be quoted is the
   // dangerous shape, and worth calling out separately from "no pool here".
@@ -180,6 +197,7 @@ export function useAssetPreflight(candidate) {
     pairs,
     quotablePairs,
     trapPairs,
+    starvablePairs,
     anyQuotable: quotablePairs.length > 0,
   };
 }

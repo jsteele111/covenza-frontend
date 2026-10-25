@@ -3,10 +3,9 @@ import { IconLockOpen, IconLock, IconAlertTriangle, IconMinus } from "@tabler/ic
 // The one recurring visual motif across the app: a circular seal showing
 // a vault's lifecycle state at a glance.
 //
-// Note: once a vault is settled, this shows a generic "Settled" state
-// rather than distinguishing repaid vs. defaulted, since that distinction
-// only lives in past event logs, not current contract state, and this
-// demo reads live state rather than indexing history.
+// Once settled, the seal shows only that the loan is closed; the outcome
+// (cash, in kind, any loss) is spelled out by VaultStatement from the
+// vault's own settled* fields.
 export function Seal({ vault }) {
   let color = "var(--parch-dim)";
   let Icon = IconMinus;
@@ -16,7 +15,7 @@ export function Seal({ vault }) {
     if (vault.isSettled) {
       color = "var(--slate)";
       Icon = IconLock;
-      label = "Settled";
+      label = vault.settledInKind ? "Settled in kind" : "Settled";
     } else if (vault.isExpired) {
       color = "var(--brick)";
       Icon = IconAlertTriangle;

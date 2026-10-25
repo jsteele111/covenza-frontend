@@ -101,7 +101,7 @@ function Shell() {
                 <GuardedRoute
                   allowed={isConnected}
                   isLoading={isLoading}
-                  reason="Lending needs a connected wallet. Nothing else — no verification, no prior loan."
+                  reason="Lending needs a connected wallet. Sanctions screening is checked on the page, which will guide you through it."
                 >
                   <RouteErrorBoundary><LenderTab /></RouteErrorBoundary>
                 </GuardedRoute>

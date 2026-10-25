@@ -1,269 +1,44 @@
 import { parseAbi } from "viem";
 
-// Human-readable ABI fragments — only the functions/events the front-end
-// actually calls. Hand-written from the v2 Solidity source (Groups A/B,
-// 76 tests passing) rather than a full artifact export.
+import kycRegistryAbi from "./abi/KYCRegistry.json";
+import vaultFactoryAbi from "./abi/VaultFactory.json";
+import vaultAbi from "./abi/Vault.json";
+import assetRegistryAbi from "./abi/AssetRegistry.json";
+import insurancePoolAbi from "./abi/InsurancePool.json";
+import vaultLensAbi from "./abi/VaultLens.json";
+
+// Covenza's own contracts: exact ABIs exported from the build of the commit
+// frozen for audit (tag audit-freeze-2026-10, fef1abc).
 //
-// IMPORTANT: every export below is wrapped in viem's parseAbi(). Passing
-// a raw array of human-readable strings directly to wagmi's hooks throws
-// "Cannot use 'in' operator to search for 'name' in <string>" — traced
-// and reproduced directly against viem 2.54.6 / wagmi 2.19.5 / @wagmi/core
-// (confirmed even against the live KYCRegistry contract with its
-// unchanged v1 ABI, so this is not specific to the v2 additions). The
-// fix is to pre-parse with parseAbi() before it ever reaches a hook.
+// These used to be hand-written human-readable fragments, kept "to only what
+// the front-end calls". That is how the frontend drifted out of step with the
+// contracts: VaultFactory.Mandate gained two fields (totalCapacity, filled),
+// the hand-written tuple did not, and every mandate read would have failed to
+// decode. An ABI copied from the compiler cannot disagree with the contract it
+// came from. To refresh after a contract change:
 //
-// v2 KEY CHANGES from v1:
-//   - Everything is ERC20-native. No payable functions anywhere: principal
-//     and deposit move via approve + transferFrom, ETH is wrapped to WETH
-//     at the edges.
-//   - deployVault takes the loan ASSET as its first argument and a
-//     referrer as its last (8 args) and is non-payable — the lender must
-//     approve the factory for principal + insurance skim first (see
-//     quoteInsuranceSkim).
-//   - payDeposit is non-payable — the borrower must approve the vault for
-//     the required deposit first.
-//   - New swap/swapBack actions, new settlement outcome fields
-//     (settledInsuranceDraw, settledBounty), and a 9-arg Settled event.
+//   cd lending-poc && npx hardhat compile
+//   then copy artifacts/contracts/<Name>.sol/<Name>.json -> .abi into src/config/abi/<Name>.json
 //
-// v2.1 ADDS the protocol fee: an add-on charged to the borrower at
-// settlement, taken from their residual and split with an optional
-// referrer. The lender's payout is unaffected by it. deployVault gained a
-// trailing `referrer` argument; the vault exposes settledProtocolFee /
-// settledReferrerFee alongside the other settlement outcome fields, plus
-// the fee terms it snapshotted at origination.
+// JSON ABIs go straight to wagmi/viem — no parseAbi() needed (that was only
+// ever required for the human-readable string form).
+export const KYC_REGISTRY_ABI = kycRegistryAbi;
+export const VAULT_FACTORY_ABI = vaultFactoryAbi;
+export const VAULT_ABI = vaultAbi;
+export const ASSET_REGISTRY_ABI = assetRegistryAbi;
+export const INSURANCE_POOL_ABI = insurancePoolAbi;
 
-export const KYC_REGISTRY_ABI = parseAbi([
-  "function isVerified(address) view returns (bool)",
-  "function statusOf(address wallet) view returns (bool verified, uint256 verifiedTs, uint256 revokedTs)",
-  "function operator() view returns (address)",
-  "function verify(address wallet) external",
-  "function verifyWithSignature(address wallet, uint256 expiry, bytes signature) external",
-  "function revoke(address wallet) external",
+// Read-only quote helper. Moved off Vault for contract size; holds no state
+// and nothing in the protocol calls it. quoteSwapOut(vault, tokenOut, amountIn,
+// poolFee) prices a prospective swap at the TWAP and returns the minimum the
+// vault itself would accept.
+export const VAULT_LENS_ABI = vaultLensAbi;
 
-  // Covenza recognises attestations issued by identity providers; it does not
-  // issue them. The URL is on chain because recognising a provider and telling
-  // an unverified borrower where to go are the same decision.
-  "function allAttesters() view returns (address[])",
-  "function attesters(address key) view returns (bool recognised, string name, string url, uint256 addedAt)",
-  "function isRecognisedAttester(address key) view returns (bool)",
-  "function attestedBy(address wallet) view returns (address)",
-  "function addAttester(address key, string name, string url) external",
-  "function removeAttester(address key) external",
-  "function rotateAttester(address oldKey, address newKey) external",
-
-  // Recognising a provider is announce-then-execute. Removal is not — a delay
-  // on revoking a compromised key would make the timelock the vulnerability.
-  "function queueAddAttester(address key, string name, string url) external",
-  "function cancelAddAttester(address key, string name, string url) external",
-  "function timelockDelay() view returns (uint256)",
-  "function queuedAt(bytes32 id) view returns (uint256)",
-  "function isExecutable(bytes32 id) view returns (bool)",
-  "function timeUntilExecutable(bytes32 id) view returns (uint256)",
-]);
-
-export const VAULT_FACTORY_ABI = parseAbi([
-  // aprBps is ANNUALISED — 300 means 3% per year, accruing pro-rata. The
-  // quotes take duration because interest, and therefore the skim and the
-  // protocol fee that are percentages of it, all depend on the term.
-  "function deployVault(address asset, address borrower, uint256 principal, uint256 aprBps, uint256 duration, bool useSeconds, uint256 depositAmount, address referrer) returns (address)",
-  // The form a lender should use: maxTier is the risk ceiling the borrower
-  // may swap into. Plain deployVault defaults it to Speculative, which
-  // preserves pre-tier behaviour but grants no protection.
-  "function deployVaultWithTier(address asset, address borrower, uint256 principal, uint256 aprBps, uint256 duration, bool useSeconds, uint256 depositAmount, address referrer, uint8 maxTier) returns (address)",
-  "function quoteMinimumDeposit(uint256 principal, uint8 maxTier, uint256 duration, bool useSeconds) view returns (uint256)",
-  "function quoteFullTermFee(uint256 principal, uint256 aprBps, uint256 duration, bool useSeconds) view returns (uint256)",
-  "function quoteInsuranceSkim(uint256 principal, uint256 aprBps, uint256 duration, bool useSeconds) view returns (uint256)",
-  "function quoteProtocolFee(uint256 principal, uint256 aprBps, uint256 duration, bool useSeconds) view returns (uint256)",
-  "function minimumFeeBps() view returns (uint256)",
-  "function setMinimumFeeBps(uint256 newBps) external",
-
-  // --- Mandates ---
-  //
-  // The lender publishes terms and a PRICING FORMULA; the borrower picks a
-  // point on it. quoteMandateFillable returns min(allowance, balance, offer)
-  // rather than the offered size — an allowance can be revoked for free, so
-  // displaying intent rather than capacity produces a book of offers that
-  // cannot be taken.
-  "function publishMandate((address asset, uint256 minPrincipal, uint256 maxPrincipal, uint256 minTermSeconds, uint256 maxTermSeconds, uint256 validForSeconds, uint8 maxTier, address permittedBorrower, uint256 baseAprBps, uint256 termPremiumBpsPerDay, uint256 depositCreditBpsPerPoint, uint256 minDepositBps, uint256 minAprBps) terms) returns (uint256)",
-  "function cancelMandate(uint256 id) external",
-  "function cancelAllMandates() external",
-  "function fillMandate(uint256 id, uint256 principal, uint256 duration, bool useSeconds, uint256 deposit) returns (address)",
-  "function mandate(uint256 id) view returns ((address lender, address asset, uint256 minPrincipal, uint256 maxPrincipal, uint256 minTermSeconds, uint256 maxTermSeconds, uint256 expiry, uint256 nonce, uint8 maxTier, bool cancelled, address permittedBorrower, uint256 baseAprBps, uint256 termPremiumBpsPerDay, uint256 depositCreditBpsPerPoint, uint256 minDepositBps, uint256 minAprBps))",
-  "function totalMandates() view returns (uint256)",
-  "function isMandateLive(uint256 id) view returns (bool)",
-  "function quoteMandateApr(uint256 id, uint256 termSeconds, uint256 depositBps) view returns (uint256)",
-  "function quoteMandateFillable(uint256 id) view returns (uint256)",
-  "function quoteFillCost(uint256 id, uint256 principal, uint256 duration, bool useSeconds, uint256 deposit) view returns (uint256 depositOwed, uint256 premiumOwed)",
-  "function maxMandateDuration() view returns (uint256)",
-  "function lenderNonce(address lender) view returns (uint256)",
-  "event MandatePublished(uint256 indexed id, address indexed lender, address indexed asset, uint256 maxPrincipal, uint256 expiry, uint8 maxTier)",
-  "event MandateCancelled(uint256 indexed id, address indexed lender)",
-  "event MandateFilled(uint256 indexed id, address indexed lender, address indexed borrower, address vault, uint256 principal, uint256 aprBps)",
-  "event AllMandatesCancelled(address indexed lender, uint256 newNonce)",
-  "function insuranceSkimRateBps() view returns (uint256)",
-  "function protocolFeeRateBps() view returns (uint256)",
-  "function referrerShareBps() view returns (uint256)",
-  "function treasury() view returns (address)",
-  "function getVaultsByBorrower(address borrower) view returns (address[])",
-  "function getVaultsByLender(address lender) view returns (address[])",
-  "function totalVaults() view returns (uint256)",
-  "function allVaults(uint256 index) view returns (address)",
-  "event VaultDeployed(address indexed vault, address indexed lender, address indexed borrower, address asset, uint256 principal, uint256 depositRequired, uint256 aprBps, uint256 insuranceSkim, uint256 deadline)",
-  "event MinimumFeeUpdated(uint256 previousBps, uint256 newBps)",
-  "event TreasuryUpdated(address indexed previousTreasury, address indexed newTreasury)",
-  "event ProtocolFeeRateUpdated(uint256 previousBps, uint256 newBps)",
-]);
-
-export const VAULT_ABI = parseAbi([
-  // Prices a prospective swap at the TWAP so the borrower can set a minimum
-  // output that means something. Returns quotable=false rather than reverting
-  // when the pair has no usable history.
-  "function quoteSwapOut(address tokenOut, uint256 amountIn, uint24 poolFee) view returns (bool quotable, uint256 twapOut, uint256 minimumOut)",
-
-  // --- Loan terms & state ---
-  "function asset() view returns (address)",
-  "function lender() view returns (address)",
-  "function borrower() view returns (address)",
-  "function principal() view returns (uint256)",
-  "function deposit() view returns (uint256)",
-  // Annualised rate, plus the term it applies over. accruedFee() is what the
-  // borrower actually owes right now; fullTermFee() is the maximum.
-  "function aprBps() view returns (uint256)",
-  "function originatedAt() view returns (uint256)",
-  "function term() view returns (uint256)",
-  "function minimumFeeBps() view returns (uint256)",
-  "function accruedFee() view returns (uint256)",
-  "function fullTermFee() view returns (uint256)",
-
-  // Risk ceiling snapshotted at origination, and the insurance premium the
-  // BORROWER pays alongside their deposit — payDeposit pulls both together.
-  "function maxTier() view returns (uint8)",
-  "function insurancePremium() view returns (uint256)",
-  "function cancel() external",
-  "event InsurancePremiumPaid(address indexed borrower, uint256 amount)",
-  "event Cancelled(address indexed lender, uint256 principalReturned, uint256 timestamp)",
-  "function deadline() view returns (uint256)",
-  "function isSettled() view returns (bool)",
-  "function requiredDeposit() view returns (uint256)",
-  "function depositPaid() view returns (bool)",
-  "function vaultBalance() view returns (uint256)",
-  "function isExpired() view returns (bool)",
-  // --- Foreign asset tracking ---
-  "function heldAssetCount() view returns (uint256)",
-  "function heldAssets(uint256 index) view returns (address)",
-  "function isHeld(address asset) view returns (bool)",
-  "function swapFeeTierOf(address asset) view returns (uint24)",
-  // --- Settlement outcome (readable post-settlement) ---
-  "function settledTotalReturned() view returns (uint256)",
-  "function settledInsuranceDraw() view returns (uint256)",
-  "function settledLenderPayout() view returns (uint256)",
-  "function settledBorrowerPayout() view returns (uint256)",
-  "function settledFee() view returns (uint256)",
-  "function settledBounty() view returns (uint256)",
-  "function settledProtocolFee() view returns (uint256)",
-  "function settledReferrerFee() view returns (uint256)",
-  "function lossSeverity() view returns (uint8)",
-  // --- Protocol fee terms, snapshotted at origination ---
-  "function treasury() view returns (address)",
-  "function referrer() view returns (address)",
-  "function protocolFeeRateBps() view returns (uint256)",
-  "function referrerShareBps() view returns (uint256)",
-  // --- Actions (all non-payable in v2) ---
-  "function payDeposit()",
-  // Canonical yield entry points. supplyToAave/withdrawFromAave remain as
-  // aliases on the contract — Aave is now one venue among several.
-  "function supplyToYield(uint256 amount)",
-  "function withdrawFromYield(uint256 amount)",
-  "function supplyToAave(uint256 amount)",
-  "function withdrawFromAave(uint256 amount)",
-  "function yieldVenueKind() view returns (uint8)",
-  "function yieldVenue() view returns (address)",
-  "function yieldPositionToken() view returns (address)",
-  "function yieldPositionValue() view returns (uint256)",
-  "function effectiveGracePeriod() view returns (uint256)",
-  "function swap(address tokenOut, uint256 amountIn, uint256 minAmountOut, uint24 poolFee)",
-  "function swapBack(address heldAsset, uint256 amountIn, uint256 minAmountOut)",
-  "function settle()",
-  // --- Events ---
-  "event DepositReceived(address indexed borrower, uint256 amount)",
-  "event SwapExecuted(address indexed tokenIn, address indexed tokenOut, uint256 amountIn, uint256 amountOut, bool isSwapBack)",
-  "event AaveSupplied(uint256 amount, uint256 timestamp)",
-  "event AaveWithdrawn(uint256 amount, uint256 timestamp)",
-  "event YieldSupplied(uint8 indexed venue, uint256 amount, uint256 timestamp)",
-  "event YieldWithdrawn(uint8 indexed venue, uint256 amount, uint256 timestamp)",
-  "event ForcedSwapBack(address indexed heldAsset, uint256 amountIn, uint256 amountOut)",
-  "event Settled(address indexed triggeredBy, bool early, uint256 totalReturned, uint256 insuranceDraw, uint256 lenderPayout, uint256 borrowerPayout, uint256 fee, uint256 bounty, uint256 timestamp)",
-  "event ProtocolFeePaid(address indexed treasury, address indexed referrer, uint256 treasuryAmount, uint256 referrerAmount)",
-]);
-
-export const ASSET_REGISTRY_ABI = parseAbi([
-  "function isWhitelisted(address asset) view returns (bool)",
-  "function aTokenOf(address asset) view returns (address)",
-  "function getWhitelistedAssets() view returns (address[])",
-  "function totalAssets() view returns (uint256)",
-  "function allAssets(uint256 index) view returns (address)",
-  "function operator() view returns (address)",
-  "function aavePool() view returns (address)",
-  "function swapRouter() view returns (address)",
-  "function uniswapFactory() view returns (address)",
-  "function weth() view returns (address)",
-  "function twapWindow() view returns (uint32)",
-  "function twapToleranceBps() view returns (uint256)",
-  "function swapBackGracePeriod() view returns (uint256)",
-  "function bountyRatePerHourBps() view returns (uint256)",
-  "function bountyCapBps() view returns (uint256)",
-  // Venue is an AssetRegistry.YieldVenue enum, ABI-encoded as uint8:
-  // 0 = None, 1 = Aave, 2 = ERC4626.
-  "function venueOf(address asset) view returns (uint8 venue, address venueAddress)",
-  "function gracePeriodOf(address asset) view returns (uint256)",
-
-  // Risk tiers. RiskTier is an enum, ABI-encoded as uint8:
-  // 0 = BlueChip, 1 = Standard, 2 = Speculative.
-  "function tierOf(address asset) view returns (uint8)",
-  "function tierConfig(uint8 tier) view returns (uint256 assumedVolBps, uint256 minDepositBps, uint256 maxTermSeconds, uint256 maxExposureBps, uint256 insurancePremiumBps)",
-  "function minimumDepositBpsForTier(uint8 tier, uint256 termSeconds) view returns (uint256)",
-  "function minimumDepositBps(address asset, uint256 termSeconds) view returns (uint256)",
-  "function maxTermForTier(uint8 tier) view returns (uint256)",
-  "function maxTermFor(address asset) view returns (uint256)",
-  "function maxExposureBpsFor(address asset) view returns (uint256)",
-  "function insurancePremiumBpsForTier(uint8 tier) view returns (uint256)",
-  "function depositCoeffBps() view returns (uint256)",
-  "function maxEntryImpactBps() view returns (uint256)",
-  "function setTier(address asset, uint8 tier) external",
-  "function setTierConfig(uint8 tier, uint256 assumedVolBps, uint256 minDepositBps, uint256 maxTermSeconds, uint256 maxExposureBps, uint256 insurancePremiumBps) external",
-  "function setDepositCoeffBps(uint256 newBps) external",
-  "function setMaxEntryImpactBps(uint256 newBps) external",
-  "event TierUpdated(address indexed asset, uint8 tier)",
-  "event TierConfigUpdated(uint8 indexed tier, uint256 assumedVolBps, uint256 minDepositBps, uint256 maxTermSeconds, uint256 maxExposureBps, uint256 insurancePremiumBps)",
-  "function addAsset(address asset, address aToken) external",
-  "function addAssetWithVenue(address asset, address aToken, uint8 venue, address venueAddress, uint256 gracePeriod) external",
-  // Lists and tags atomically. Without it an asset sits at the registry
-  // default until a second transaction, so the tier chosen is briefly not the
-  // tier in force.
-  "function addAssetWithTier(address asset, address aToken, uint8 venue, address venueAddress, uint256 gracePeriod, uint8 tier) external",
-  "function tierHistoryLength(address asset) view returns (uint256)",
-  "function highestTierSince(address asset, uint256 since) view returns (uint8)",
-  "function setVenue(address asset, uint8 venue, address venueAddress) external",
-  "function setGracePeriod(address asset, uint256 gracePeriod) external",
-  "function removeAsset(address asset) external",
-  "function setSettlementConfig(uint32 twapWindow, uint256 twapToleranceBps, uint256 swapBackGracePeriod, uint256 bountyRatePerHourBps, uint256 bountyCapBps) external",
-  "event AssetAdded(address indexed asset, address indexed aToken)",
-  "event AssetRemoved(address indexed asset)",
-  "event VenueUpdated(address indexed asset, uint8 venue, address venueAddress)",
-  "event GracePeriodUpdated(address indexed asset, uint256 gracePeriod)",
-]);
-
-export const INSURANCE_POOL_ABI = parseAbi([
-  "function reserveOf(address asset) view returns (uint256)",
-  "function drawCapBps() view returns (uint256)",
-  "function operator() view returns (address)",
-  "function isRegisteredVault(address vault) view returns (bool)",
-  "function fund(address asset, uint256 amount) external",
-  "function adminWithdraw(address asset, address to, uint256 amount) external",
-  "function setDrawCapBps(uint256 newBps) external",
-  "event Funded(address indexed asset, address indexed from, uint256 amount)",
-  "event Drawn(address indexed asset, address indexed vault, uint256 requested, uint256 paid)",
-]);
+// --- Third-party contracts: only what the app calls, hand-written ---
+//
+// IMPORTANT: human-readable fragments must be wrapped in viem's parseAbi().
+// Passing a raw array of strings to wagmi's hooks throws "Cannot use 'in'
+// operator to search for 'name' in <string>".
 
 export const ERC20_ABI = parseAbi([
   "function balanceOf(address account) view returns (uint256)",
@@ -273,14 +48,9 @@ export const ERC20_ABI = parseAbi([
   "function symbol() view returns (string)",
 ]);
 
-// Uniswap V3, read-only. Used by the whitelist pre-flight to establish
-// whether an asset can actually be force-settled before it is whitelisted.
-//
-// The pair matters, not just the asset: Vault.swap() guards the quote
-// (destination -> loan asset) at the borrower's chosen fee tier, so a
-// candidate asset has to be checked against each asset it might be paired
-// with, at each tier. An asset can hold deep liquidity at one tier and be
-// completely unquotable at another.
+// Uniswap V3, read-only. Used by the whitelist pre-flight to establish whether
+// an asset can be force-settled before it is listed, and whether its pool keeps
+// enough price history to be approved (audit KRAIT-004).
 export const UNISWAP_V3_FACTORY_ABI = parseAbi([
   "function getPool(address tokenA, address tokenB, uint24 fee) view returns (address)",
 ]);
@@ -291,8 +61,7 @@ export const UNISWAP_V3_POOL_ABI = parseAbi([
   "function slot0() view returns (uint160 sqrtPriceX96, int24 tick, uint16 observationIndex, uint16 observationCardinality, uint16 observationCardinalityNext, uint8 feeProtocol, bool unlocked)",
 ]);
 
-// WETH adds wrap/unwrap on top of the standard ERC20 surface — used by the
-// wrap-ETH helper so a lender holding plain ETH can fund a WETH loan.
+// WETH adds wrap/unwrap on top of the standard ERC20 surface.
 export const WETH_ABI = [
   ...ERC20_ABI,
   ...parseAbi([
