@@ -1,21 +1,24 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useAccount, useChainId, useReadContract, useReadContracts, useWriteContract, useWaitForTransactionReceipt, usePublicClient } from "wagmi";
 import { parseUnits, formatUnits } from "viem";
 import { ERC20_ABI, ASSET_REGISTRY_ABI, VAULT_LENS_ABI } from "../config/abis.js";
 import { getContractsForChain, isPlaceholder, symbolForToken } from "../config/contracts.js";
 import { useLatestVault } from "../hooks/useLatestVault.js";
 import { useVaultSelection } from "../hooks/useVaultSelection.js";
-import { useSwapPreflight } from "../hooks/useSwapPreflight.js";
+import { useSwapPreflight, explainTokenRefusal } from "../hooks/useSwapPreflight.js";
 import { useVaultData } from "../hooks/useVaultData.js";
 import { useVaultAction } from "../hooks/useVaultAction.js";
 import { useHeldAssets } from "../hooks/useHeldAssets.js";
 import { useEligibility } from "../hooks/useEligibility.js";
 import { useAttesters } from "../hooks/useAttesters.js";
+import { useChainNow } from "../hooks/useChainNow.js";
 import { VaultStatement } from "./VaultStatement.jsx";
 import { VaultActions } from "./VaultActions.jsx";
 import { MandateBoard } from "./MandateBoard.jsx";
 import { ActionButton } from "./ActionButton.jsx";
 import { KycGate } from "./KycGate.jsx";
+import { UnclaimedBanner } from "./HistoryPage.jsx";
+import { Link } from "react-router-dom";
 import { formatTokenAmount } from "../utils/format.js";
 
 // abis.js already exports pre-parsed ABIs — do not re-wrap in parseAbi().
@@ -69,13 +72,25 @@ export function BorrowerTab() {
   const elig = useEligibility(address, "borrower");
 
   const { allVaults, refetch: refetchVaultList } = useLatestVault(address, "borrower");
+  // Open loans only: closed ones are on the History page (26 October 2026).
   const {
     vaults: vaultList,
-    activeCount,
+    loaded: vaultsLoaded,
     selected: latestVaultAddress,
     select: selectVault,
     refetch: refetchVaultStatuses,
-  } = useVaultSelection(allVaults);
+  } = useVaultSelection(allVaults, { activeOnly: true });
+  const hasClosedLoans = allVaults.length > vaultList.length;
+
+  // When the loan on screen closes, it leaves this page for History. Say so,
+  // rather than letting it silently vanish under the borrower's cursor.
+  const [justClosed, setJustClosed] = useState(false);
+  const shownVault = useRef(null);
+  useEffect(() => {
+    if (shownVault.current && !latestVaultAddress && vaultsLoaded) setJustClosed(true);
+    if (latestVaultAddress) setJustClosed(false);
+    shownVault.current = latestVaultAddress;
+  }, [latestVaultAddress, vaultsLoaded]);
 
   const { vault, refetch: refetchVaultData } = useVaultData(latestVaultAddress);
   const { heldAssets, refetch: refetchHeldAssets } = useHeldAssets(
@@ -280,21 +295,39 @@ export function BorrowerTab() {
     return <EmptyState message="Checking eligibility..." />;
   }
 
-  // An ineligible wallet still sees its existing loans — a lapsed attestation
-  // stops NEW borrowing, not repayment, and hiding a live loan behind the gate
-  // would hide its deadline. Only a wallet with no vaults at all is stopped here.
-  if (!elig.eligible && allVaults.length === 0) {
-    return <KycGate address={address} role="borrower" onEligible={elig.refetch} />;
+  if (!vaultsLoaded) {
+    return <EmptyState message="Loading your loans..." />;
+  }
+
+  // An ineligible wallet still sees its OPEN loans — a lapsed attestation
+  // stops new borrowing, not repayment, and hiding a live loan behind the gate
+  // would hide its deadline. Only a wallet with nothing open is stopped here.
+  if (!elig.eligible && vaultList.length === 0) {
+    return (
+      <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+        <UnclaimedBanner address={address} />
+        <KycGate address={address} role="borrower" onEligible={elig.refetch} />
+        {hasClosedLoans && <HistoryLink />}
+      </div>
+    );
   }
 
   const onFilled = () => { refetchVaultList(); refetchVaultStatuses(); };
 
-  // No vault yet is not a dead end: lenders publish terms and the borrower
+  // No open loan is not a dead end: lenders publish terms and the borrower
   // fills them.
   if (!vault) {
     return (
       <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+        {justClosed && (
+          <div className="notice-bar" role="status" style={{ borderColor: "rgba(134,173,145,0.45)", background: "rgba(134,173,145,0.08)" }}>
+            <span>Your loan has closed. Its outcome, and anything waiting to be claimed, is in loan history.</span>
+            <Link to="/history" className="btn btn-auto" style={{ padding: "7px 14px" }}>View it</Link>
+          </div>
+        )}
+        <UnclaimedBanner address={address} />
         <EligibleBadge elig={elig} />
+        {hasClosedLoans && !justClosed && <HistoryLink />}
         <div>
           <p style={{ fontSize: 13, fontWeight: 600, color: "var(--parch)", margin: "0 0 4px" }}>
             Available mandates
@@ -348,7 +381,8 @@ export function BorrowerTab() {
   }
 
   // --- Swap ---
-  const swapDisabled = !swapInputsValid || swapPreflight.status === "would-revert";
+  const swapChecking = swapInputsValid && swapPreflight.status === "checking";
+  const swapDisabled = !swapInputsValid || swapPreflight.status === "would-revert" || swapChecking;
   const swapDisabledReason = !vault.depositPaid
     ? "Pay the deposit before swapping."
     : !canAct
@@ -363,6 +397,8 @@ export function BorrowerTab() {
     ? "Enter a minimum output amount."
     : parsedSwapIn > vault.investableRemaining
     ? `Exceeds investable balance (${formatTokenAmount(vault.investableRemaining, vault.decimals)} ${vault.symbol}).`
+    : swapChecking
+    ? "Checking with the contract…"
     : swapPreflight.status === "would-revert"
     ? explainSwapRefusal(swapPreflight.reason, parsedSwapMinOut, floorOut, swapAssetDecimals)
     : null;
@@ -372,6 +408,7 @@ export function BorrowerTab() {
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+      <UnclaimedBanner address={address} />
       {!elig.eligible && (
         <div style={{ ...cardStyle, borderColor: "var(--brick)" }}>
           <p style={{ fontSize: 12, color: "var(--brick)", margin: 0, lineHeight: 1.6 }}>
@@ -399,7 +436,7 @@ export function BorrowerTab() {
                   cursor: "pointer", fontWeight: active ? 600 : 400,
                 }}
               >
-                {v.label}{v.isSettled ? " · settled" : ""}
+                {v.label}
               </button>
             );
           })}
@@ -408,25 +445,6 @@ export function BorrowerTab() {
 
       <VaultStatement vault={vault} />
 
-      {/* Keyed on having no ACTIVE loan anywhere, not on this vault being
-          settled — otherwise merely looking at an old closed loan would offer
-          to open another while one is already running. */}
-      {activeCount === 0 && elig.eligible && (
-        <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-          <div>
-            <p style={{ fontSize: 13, fontWeight: 600, color: "var(--parch)", margin: "0 0 4px" }}>
-              Borrow again
-            </p>
-            <p style={{ fontSize: 12, color: "var(--parch-dim)", margin: 0, lineHeight: 1.5 }}>
-              Nothing outstanding. Any live mandate can be filled straight away.
-            </p>
-          </div>
-          <MandateBoard onFilled={onFilled} />
-        </div>
-      )}
-      {activeCount === 0 && !elig.eligible && (
-        <KycGate address={address} role="borrower" onEligible={elig.refetch} />
-      )}
 
       {/* --- Deposit --- */}
       {!vault.isSettled && !vault.depositPaid && (
@@ -634,7 +652,8 @@ function SwapBackRow({ vaultAddress, held, loanSymbol, loanDecimals, onDone }) {
     args: [held.address, parsedAmountIn, parsedMinOut],
   });
 
-  const disabled = !inputsValid || preflight.status === "would-revert";
+  const checking = inputsValid && preflight.status === "checking";
+  const disabled = !inputsValid || preflight.status === "would-revert" || checking;
   const disabledReason = parsedAmountIn === undefined
     ? "Enter a valid amount."
     : parsedMinOut === undefined
@@ -643,6 +662,8 @@ function SwapBackRow({ vaultAddress, held, loanSymbol, loanDecimals, onDone }) {
     // The displayed figure is rounded for legibility, so typing what is on
     // screen can exceed the real one by a few wei.
     ? "Amount exceeds what this vault holds — use Max for the exact figure."
+    : checking
+    ? "Checking with the contract…"
     : preflight.status === "would-revert"
     ? explainSwapBackRefusal(preflight.reason)
     : null;
@@ -757,6 +778,15 @@ function AssetSwitcher({ assets, chainId, value, onChange, unavailable }) {
  * One line of the borrower's up-front cost. Deposit and premium are shown
  * separately because only one of them comes back.
  */
+/** Points to the History page, where closed loans now live. */
+function HistoryLink() {
+  return (
+    <p className="note" style={{ margin: 0 }}>
+      Your closed loans are in <Link to="/history">loan history</Link>.
+    </p>
+  );
+}
+
 function CostRow({ label, value, emphasis }) {
   return (
     <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 12 }}>
@@ -813,7 +843,8 @@ const cardStyle = {
 function EligibleBadge({ elig }) {
   const { live: providers } = useAttesters();
   const issuer = providers.find((p) => p.key.toLowerCase() === (elig.attester || "").toLowerCase());
-  const daysLeft = elig.validUntil ? Math.floor((elig.validUntil - Date.now() / 1000) / 86400) : null;
+  const chainNow = useChainNow(60);
+  const daysLeft = elig.validUntil ? Math.floor((elig.validUntil - chainNow) / 86400) : null;
 
   return (
     <div
@@ -874,6 +905,8 @@ function explainSwapRefusal(reason, minOut, floorOut, outDecimals) {
 }
 
 function explainSwapBackRefusal(reason) {
+  const frozen = explainTokenRefusal(reason);
+  if (frozen) return frozen;
   if (/too little received|Received less than minimum/i.test(reason || "")) {
     return "The pool cannot fill this at the TWAP less the tolerance right now. Try a smaller amount, or wait for the price to settle.";
   }

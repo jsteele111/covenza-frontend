@@ -169,7 +169,9 @@ export function useAssetPreflight(candidate) {
       pool: hasPool ? c.pool : undefined,
       status,
       cardinality: q?.cardinality,
-      liquidity: q?.liquidity,
+      // A flag, not the raw uint128: the report is passed down as a prop, and
+      // React 19's development build throws serialising a BigInt in a list.
+      hasLiquidity: q?.liquidity !== undefined && q.liquidity > 0n,
     };
   });
 
@@ -179,7 +181,7 @@ export function useAssetPreflight(candidate) {
   // A pool that exists and holds liquidity but cannot be quoted is the
   // dangerous shape, and worth calling out separately from "no pool here".
   const trapPairs = pairs.filter(
-    (p) => p.status === "no-twap" && p.liquidity !== undefined && p.liquidity > 0n
+    (p) => p.status === "no-twap" && p.hasLiquidity
   );
 
   const isChecking = valid && (baseLoading || poolLoading || quoteLoading);

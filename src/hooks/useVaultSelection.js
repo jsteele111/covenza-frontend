@@ -16,8 +16,13 @@ import { VAULT_ABI } from "../config/abis.js";
  *      Default is the most recent ACTIVE vault, because that is the one with a
  *      deadline attached and therefore the one that can hurt someone if
  *      missed. Settled vaults are still reachable, just never volunteered.
+ *
+ *      `activeOnly` (26 October 2026): closed loans now live on the History
+ *      page, so the Lend and Borrow pages ask for open ones only. `loaded`
+ *      says whether the settled flags have arrived — until then every vault
+ *      would look open, and the page would flash closed loans.
  */
-export function useVaultSelection(vaultAddresses) {
+export function useVaultSelection(vaultAddresses, { activeOnly = false } = {}) {
   const [override, setOverride] = useState(null);
 
   const addresses = vaultAddresses || [];
@@ -43,7 +48,9 @@ export function useVaultSelection(vaultAddresses) {
     [addresses.join("|"), data]
   );
 
+  const loaded = addresses.length === 0 || data !== undefined;
   const activeVaults = vaults.filter((v) => !v.isSettled);
+  const listed = activeOnly ? activeVaults : vaults;
 
   // Reverse order: most recent first, since that is what someone is most
   // likely to be looking for.
@@ -57,11 +64,17 @@ export function useVaultSelection(vaultAddresses) {
   // The override is dropped if it no longer refers to a real vault — which
   // happens on a wallet switch, when the previous borrower's selection would
   // otherwise persist into someone else's list.
+  const selectable = listed.map((v) => v.address);
   const selected =
-    override && addresses.includes(override) ? override : preferred;
+    override && selectable.includes(override)
+      ? override
+      : activeOnly
+      ? (activeVaults.length > 0 ? activeVaults[activeVaults.length - 1].address : null)
+      : preferred;
 
   return {
-    vaults,
+    vaults: listed,
+    loaded,
     activeCount: activeVaults.length,
     selected,
     select: setOverride,

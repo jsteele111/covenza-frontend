@@ -15,12 +15,14 @@ const TESTNET_DISMISS_KEY = "covenza.testnetBar.dismissed";
  * listed only for the wallet that holds the role — the route itself stays
  * open to anyone who types it, because everything it reads is public.
  */
-function navItems(roles) {
+function navItems(roles, connected) {
   const items = [
     { to: "/dashboard", label: "Dashboard" },
     { to: "/lender", label: "Lend" },
     { to: "/borrower", label: "Borrow" },
   ];
+  // History is per wallet, so it is offered once a wallet is connected.
+  if (connected) items.push({ to: "/history", label: "History" });
   if (roles.includes("operator")) items.push({ to: "/operator", label: "Operator" });
   return items;
 }
@@ -67,10 +69,10 @@ export function TestnetBar() {
   );
 }
 
-export function SiteHeader({ roles }) {
+export function SiteHeader({ roles, connected }) {
   const [open, setOpen] = useState(false);
   const location = useLocation();
-  const items = navItems(roles);
+  const items = navItems(roles, connected);
   const toggleRef = useRef(null);
   // Stable, so the drawer's open-effect does not re-run on every render.
   const close = useCallback(() => setOpen(false), []);

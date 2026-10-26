@@ -12,6 +12,7 @@ import { useAssetPreflight } from "../hooks/useAssetPreflight.js";
 import { useAttesters } from "../hooks/useAttesters.js";
 import { TIER_LABELS } from "../hooks/useVaultData.js";
 import { ActionButton } from "./ActionButton.jsx";
+import { useChainNow } from "../hooks/useChainNow.js";
 
 // abis.js already exports pre-parsed ABIs — do not re-wrap in parseAbi().
 const kycAbi = KYC_REGISTRY_ABI;
@@ -271,6 +272,7 @@ export function OperatorTab() {
                 )}
                 <Row label="Lender received" value={amount(v.settledLenderPayout)} />
                 <Row label="Borrower received" value={amount(v.settledBorrowerPayout)} />
+                {!isInKind && <LossLines v={v} amount={amount} />}
                 {isInKind && (
                   <p style={{ fontSize: 12, color: "var(--parch-dim)", margin: "4px 0 0", lineHeight: 1.5 }}>
                     Cash only. The vault could not sell every held asset, so the lender also received
@@ -369,6 +371,34 @@ export function OperatorTab() {
       )}
       </fieldset>
     </div>
+  );
+}
+
+/**
+ * How much was actually lost, so an operator deciding on revocation is not
+ * left subtracting in their head. A few thousandths lost to pool fees on a
+ * round trip and a deposit wiped out are both "borrower-only loss"; they are
+ * not the same case.
+ *
+ * Position loss: principal + deposit put in, less everything the vault
+ * returned. Lender shortfall: principal + interest owed, less what the lender
+ * received (lender-impacted cases only).
+ */
+function LossLines({ v, amount }) {
+  const putIn = (v.principal ?? 0n) + (v.deposit ?? 0n);
+  const returned = v.settledTotalReturned ?? 0n;
+  const loss = putIn > returned ? putIn - returned : 0n;
+  const pctOfDeposit = v.deposit > 0n ? Number((loss * 10000n) / v.deposit) / 100 : null;
+  const owed = (v.principal ?? 0n) + (v.settledFee ?? 0n);
+  const shortfall = owed > (v.settledLenderPayout ?? 0n) ? owed - v.settledLenderPayout : 0n;
+  return (
+    <>
+      <Row
+        label="Loss on the position"
+        value={`${amount(loss)}${pctOfDeposit !== null ? ` (${pctOfDeposit.toFixed(2)}% of the deposit)` : ""}`}
+      />
+      {shortfall > 0n && <Row label="Lender shortfall" value={amount(shortfall)} />}
+    </>
   );
 }
 
@@ -1004,16 +1034,24 @@ function AssetWhitelistPanel() {
  *
  * @param contract   address of a Timelocked contract
  * @param abi        its ABI
- * @param call       { functionName, args } or null while the inputs are invalid
+ * @param call       () => ({ functionName, args }), or null while the inputs are
+ *                   invalid. A FUNCTION, not the object: React 19's development
+ *                   build diffs props for its performance log with
+ *                   JSON.stringify, which throws on an array holding a BigInt —
+ *                   and once it throws, the input that changed the prop stops
+ *                   updating (found click-testing the draw cap, 26 Oct 2026).
  * @param id         optional explicit queue id (admin withdrawal hashes its
  *                   own tagged encoding); default keccak256(calldata)
- * @param queueCall  optional { functionName, args } to announce; default queueAction(id)
- * @param cancelCall optional { functionName, args } to abandon; default cancelAction(id)
+ * @param queueCall  optional () => ({ functionName, args }) to announce; default queueAction(id)
+ * @param cancelCall optional () => ({ functionName, args }) to abandon; default cancelAction(id)
  */
 function TimelockedCall({
-  contract, abi, call, id: explicitId, queueCall, cancelCall,
+  contract, abi, call: makeCall, id: explicitId, queueCall: makeQueueCall, cancelCall: makeCancelCall,
   needsTimelock = true, label, invalidReason, onDone,
 }) {
+  const call = makeCall ? makeCall() : null;
+  const queueCall = makeQueueCall ? makeQueueCall() : undefined;
+  const cancelCall = makeCancelCall ? makeCancelCall() : undefined;
   const publicClient = usePublicClient();
   const [stage, setStage] = useState(null); // "queue" | "execute" | "cancel"
   const { writeContract, data: hash, isPending, error, reset } = useWriteContract();
@@ -1055,9 +1093,12 @@ function TimelockedCall({
   const queuedAt = id ? Number(reads?.[1]?.result ?? 0) : 0;
   const secondsLeft = Number(reads?.[2]?.result ?? 0);
   const deadline = Number(reads?.[3]?.result ?? 0);
-  const now = Math.floor(Date.now() / 1000);
+  const now = useChainNow(5);
 
-  const direct = delay === 0 || !needsTimelock;
+  // Until the timelock reads arrive, the delay is unknown. Defaulting it to
+  // zero briefly offered a direct "execute" for a call that needs announcing.
+  const loaded = reads !== undefined;
+  const direct = loaded && (delay === 0 || !needsTimelock);
   const lapsed = queuedAt > 0 && deadline > 0 && now > deadline;
   const isQueued = queuedAt > 0 && !lapsed;
   const isMature = isQueued && secondsLeft === 0;
@@ -1088,7 +1129,9 @@ function TimelockedCall({
 
   return (
     <div>
-      {direct ? (
+      {!loaded ? (
+        <ActionButton label="Checking timelock…" disabled />
+      ) : direct ? (
         <ActionButton
           label={label}
           primary={valid}
@@ -1217,7 +1260,10 @@ function PoolPairRow({ tokenA, tokenB, current, uniFactory, twapWindow, onDone }
   const chainId = useChainId();
   const contracts = getContractsForChain(chainId);
   const [fee, setFee] = useState(null);
-  const chosen = fee ?? (current || 3000);
+  // Nothing is pre-selected for a pair with no approved pool. Pre-selecting
+  // 0.3% highlighted it in brass, which read as "approved" (found
+  // click-testing tWETH/tAAPL, where no pool exists at any tier).
+  const chosen = fee ?? (current || null);
 
   // Pool address and history depth at every tier, so the operator sees which
   // tiers qualify before choosing one.
@@ -1251,8 +1297,12 @@ function PoolPairRow({ tokenA, tokenB, current, uniFactory, twapWindow, onDone }
   });
 
   const sel = tiers.find((t) => t.fee === chosen);
+  const poolsRead = poolResults !== undefined;
+  const noPoolAnywhere = poolsRead && tiers.every((t) => !t.pool);
   const unchanged = current === chosen;
-  const invalidReason = unchanged
+  const invalidReason = chosen === null
+    ? "Choose the fee tier of the pool to approve."
+    : unchanged
     ? "This is already the approved pool."
     : !sel?.pool
     ? "No pool exists at this fee tier."
@@ -1273,6 +1323,14 @@ function PoolPairRow({ tokenA, tokenB, current, uniFactory, twapWindow, onDone }
           {current === undefined ? "—" : current ? `approved: ${FEE_LABELS[current] || current}` : "no approved pool"}
         </span>
       </div>
+      {noPoolAnywhere ? (
+        <p className="note" style={{ margin: 0 }}>
+          No Uniswap pool exists for this pair at any fee tier, so there is nothing to approve. A pool has
+          to be created (and grown to keep more than {twapWindow ?? "—"} history slots) before this pair
+          can be traded.
+        </p>
+      ) : (
+      <>
       <div style={{ display: "inline-flex", background: "var(--ink)", border: "1px solid var(--hairline)", borderRadius: 8, padding: 3, marginBottom: 8 }}>
         {tiers.map((t) => {
           const active = chosen === t.fee;
@@ -1309,12 +1367,14 @@ function PoolPairRow({ tokenA, tokenB, current, uniFactory, twapWindow, onDone }
       <TimelockedCall
         contract={contracts.assetRegistry}
         abi={assetRegistryAbi}
-        call={call}
+        call={call ? () => call : null}
         needsTimelock={Boolean(current)}
         label={current ? "Change approved pool" : "Approve pool"}
         invalidReason={invalidReason}
         onDone={() => { setFee(null); onDone(); }}
       />
+      </>
+      )}
       {Boolean(current) && (
         <p style={{ fontSize: 12, color: "var(--slate)", margin: "8px 0 0", lineHeight: 1.5 }}>
           Changing it applies to new positions only; a vault already holding the asset keeps the pool it
@@ -1421,7 +1481,7 @@ function InsurancePoolPanel() {
         <TimelockedCall
           contract={contracts.insurancePool}
           abi={insurancePoolAbi}
-          call={bpsValid(newDrawCap) ? { functionName: "setDrawCapBps", args: [BigInt(newDrawCap)] } : null}
+          call={bpsValid(newDrawCap) ? () => ({ functionName: "setDrawCapBps", args: [BigInt(newDrawCap)] }) : null}
           label="Update draw cap"
           invalidReason="Enter a whole number from 1 to 10000 bps."
           onDone={() => { setNewDrawCap(""); refresh(); }}
@@ -1434,7 +1494,7 @@ function InsurancePoolPanel() {
         <TimelockedCall
           contract={contracts.insurancePool}
           abi={insurancePoolAbi}
-          call={bpsValid(newDrawShare) ? { functionName: "setMaxDrawShareBps", args: [BigInt(newDrawShare)] } : null}
+          call={bpsValid(newDrawShare) ? () => ({ functionName: "setMaxDrawShareBps", args: [BigInt(newDrawShare)] }) : null}
           label="Update reserve share"
           invalidReason="Enter a whole number from 1 to 10000 bps."
           onDone={() => { setNewDrawShare(""); refresh(); }}
@@ -1461,10 +1521,10 @@ function InsurancePoolPanel() {
         <TimelockedCall
           contract={contracts.insurancePool}
           abi={insurancePoolAbi}
-          call={withdrawArgs ? { functionName: "adminWithdraw", args: withdrawArgs } : null}
+          call={withdrawArgs ? () => ({ functionName: "adminWithdraw", args: withdrawArgs }) : null}
           id={withdrawId}
-          queueCall={withdrawArgs ? { functionName: "queueAdminWithdraw", args: withdrawArgs } : undefined}
-          cancelCall={withdrawArgs ? { functionName: "cancelAdminWithdraw", args: withdrawArgs } : undefined}
+          queueCall={withdrawArgs ? () => ({ functionName: "queueAdminWithdraw", args: withdrawArgs }) : undefined}
+          cancelCall={withdrawArgs ? () => ({ functionName: "cancelAdminWithdraw", args: withdrawArgs }) : undefined}
           label="Withdraw"
           invalidReason="Select an asset, a valid recipient address, and a valid amount."
           onDone={() => { setWithdrawTo(""); setWithdrawAmount(""); refresh(); }}
@@ -1567,7 +1627,7 @@ function SettlementConfigPanel() {
         <TimelockedCall
           contract={contracts.assetRegistry}
           abi={assetRegistryAbi}
-          call={call}
+          call={call ? () => call : null}
           label="Save settlement configuration"
           invalidReason={boundsReason || "These are the values already in force."}
           onDone={() => { setLoaded(false); refetch(); }}
@@ -1632,7 +1692,7 @@ function PreflightReport({ preflight }) {
         <div style={{ display: "flex", flexDirection: "column", gap: 6, marginTop: 12, paddingTop: 12, borderTop: "1px solid var(--hairline)" }}>
           {shown.map((p) => {
             const ok = p.status === "quotable";
-            const hasLiquidity = p.liquidity !== undefined && p.liquidity > 0n;
+            const hasLiquidity = p.hasLiquidity;
             return (
               <div key={`${p.counterparty}-${p.fee}`} style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 12 }}>
                 <span className="mono" style={{ fontSize: 12, color: "var(--parch)" }}>

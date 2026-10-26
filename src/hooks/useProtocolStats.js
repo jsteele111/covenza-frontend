@@ -75,6 +75,12 @@ export function useProtocolStats() {
       // asset's reserve. Appended rather than inserted so the indices above
       // keep their meaning.
       { address: insurancePool, abi: INSURANCE_POOL_ABI, functionName: "maxDrawShareBps" },
+      // The borrower's insurance premium per risk ceiling — what actually funds
+      // the pool now. The lender-side skim it replaced is still a setting, but
+      // at zero; showing "skim 0%" alone suggested the pool was unfunded.
+      { address: assetRegistry, abi: ASSET_REGISTRY_ABI, functionName: "insurancePremiumBpsForTier", args: [0] },
+      { address: assetRegistry, abi: ASSET_REGISTRY_ABI, functionName: "insurancePremiumBpsForTier", args: [1] },
+      { address: assetRegistry, abi: ASSET_REGISTRY_ABI, functionName: "insurancePremiumBpsForTier", args: [2] },
     ],
     query: { enabled: isConfigured, refetchInterval: 30000 },
   });
@@ -156,6 +162,11 @@ export function useProtocolStats() {
         drawCapBps: configResults[5]?.result,
         insuranceSkimRateBps: configResults[6]?.result,
         maxDrawShareBps: configResults[8]?.result,
+        // Numbers, not BigInts: this object is passed down as a prop, and
+        // React 19's development build throws serialising a BigInt in a list.
+        premiumBps: [9, 10, 11].map((k) =>
+          configResults[k]?.result != null ? Number(configResults[k].result) : null
+        ),
         totalVaults: totalVaultsCount,
       }
     : null;

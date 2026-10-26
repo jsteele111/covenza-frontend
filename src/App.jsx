@@ -14,6 +14,7 @@ import { useDeploymentHealth } from "./hooks/useDeploymentHealth.js";
 import { LenderTab } from "./components/LenderTab.jsx";
 import { BorrowerTab } from "./components/BorrowerTab.jsx";
 import { OperatorTab } from "./components/OperatorTab.jsx";
+import { HistoryPage } from "./components/HistoryPage.jsx";
 
 const ROLE_PRIORITY = ["operator", "lender", "borrower"];
 
@@ -51,14 +52,14 @@ function Shell() {
   // layouts; the connect prompts read better at a narrower measure.
   const isWide =
     hasAnyRole || location.pathname === "/dashboard" || location.pathname === "/" ||
-    location.pathname === "/operator";
+    location.pathname === "/operator" || location.pathname === "/history";
 
   return (
     <>
       <TestnetBar />
       {/* The header's nav replaces the old role-switcher row: Lend and Borrow
           are always listed, Operator only for the wallet holding the role. */}
-      <SiteHeader roles={isConnected && !isLoading ? roles : []} />
+      <SiteHeader roles={isConnected && !isLoading ? roles : []} connected={isConnected} />
 
         <main className={`page${isWide ? "" : " narrow"}`}>
           <DeploymentHealthBanner />
@@ -113,6 +114,18 @@ function Shell() {
                 can browse but no longer holds the role. Gating reads on a
                 credential no browser can present is a guarantee that nobody
                 sees the page. */}
+            <Route
+              path="/history"
+              element={
+                <GuardedRoute
+                  allowed={isConnected}
+                  isLoading={isLoading}
+                  reason="Loan history is per wallet. Connect the wallet whose loans you want to see."
+                >
+                  <RouteErrorBoundary><HistoryPage /></RouteErrorBoundary>
+                </GuardedRoute>
+              }
+            />
             <Route
               path="/operator"
               element={<RouteErrorBoundary><OperatorTab /></RouteErrorBoundary>}

@@ -778,3 +778,112 @@ input[type="checkbox"] {
     animation-duration: 0ms !important;
   }
 }
+
+/* --- Segmented control ---------------------------------------------------- */
+
+.seg {
+  display: inline-flex;
+  background: var(--panel);
+  border: 1px solid var(--hairline);
+  border-radius: 10px;
+  padding: 3px;
+}
+
+.seg button {
+  border: none;
+  border-radius: 7px;
+  padding: 7px 14px;
+  font-size: 13px;
+  background: transparent;
+  color: var(--parch-dim);
+  transition: background 140ms var(--ease), color 140ms var(--ease);
+}
+
+.seg button:hover {
+  color: var(--parch);
+}
+
+.seg button.active {
+  background: var(--brass);
+  color: var(--ink);
+  font-weight: 600;
+}
+
+/* --- Loan history ---------------------------------------------------------- */
+
+.history-row {
+  display: grid;
+  grid-template-columns: minmax(0, 2fr) minmax(0, 1.3fr) minmax(0, 1.2fr) auto;
+  align-items: center;
+  gap: 16px;
+  width: 100%;
+  padding: 16px 20px;
+  background: transparent;
+  border: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  transition: background 140ms var(--ease);
+}
+
+.history-row:hover {
+  background: var(--panel-2);
+}
+
+.history-main,
+.history-received {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+
+.history-received {
+  align-items: flex-end;
+  text-align: right;
+}
+
+.history-title {
+  font-size: 14.5px;
+  font-weight: 600;
+  color: var(--parch);
+}
+
+.history-outcome {
+  font-size: 13px;
+  font-weight: 500;
+}
+
+@media (max-width: 700px) {
+  .history-row {
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 6px 12px;
+  }
+  .history-outcome {
+    grid-column: 1;
+  }
+  .history-received {
+    grid-column: 1;
+    align-items: flex-start;
+    text-align: left;
+  }
+  .history-row > svg {
+    grid-column: 2;
+    grid-row: 1;
+  }
+}
+
+.notice-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  border: 1px solid rgba(184, 146, 90, 0.4);
+  background: rgba(184, 146, 90, 0.08);
+  border-radius: var(--radius);
+  padding: 12px 16px;
+  margin-bottom: 16px;
+  font-size: 13px;
+  color: var(--parch);
+}

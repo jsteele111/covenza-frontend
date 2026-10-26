@@ -193,7 +193,14 @@ function ProtocolConfigStrip({ config, isLoading }) {
     { label: "Keeper bounty cap", value: config.bountyCapBps != null ? formatPercent(Number(config.bountyCapBps) / 10000) : "—" },
     { label: "Insurance draw cap (of principal)", value: config.drawCapBps != null ? formatPercent(Number(config.drawCapBps) / 10000) : "—" },
     { label: "Insurance draw cap (of reserve)", value: config.maxDrawShareBps != null ? formatPercent(Number(config.maxDrawShareBps) / 10000) : "—" },
-    { label: "Insurance skim rate", value: config.insuranceSkimRateBps != null ? formatPercent(Number(config.insuranceSkimRateBps) / 10000) : "—" },
+    ...["Blue chip", "Standard", "Speculative"].map((tier, i) => ({
+      label: `Insurance premium — ${tier}`,
+      value: config.premiumBps?.[i] != null ? `${formatPercent(Number(config.premiumBps[i]) / 10000)}/yr` : "—",
+    })),
+    // Only shown if someone turns it on; at zero it is noise.
+    ...(config.insuranceSkimRateBps > 0n
+      ? [{ label: "Lender insurance skim", value: formatPercent(Number(config.insuranceSkimRateBps) / 10000) }]
+      : []),
   ];
 
   return (

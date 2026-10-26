@@ -6,6 +6,7 @@ import { getContractsForChain } from "../config/contracts.js";
 import { formatTokenAmount, shortAddress } from "../utils/format.js";
 import { useMandates, previewMandateApr } from "../hooks/useMandates.js";
 import { ActionButton } from "./ActionButton.jsx";
+import { useChainNow } from "../hooks/useChainNow.js";
 
 const factoryAbi = VAULT_FACTORY_ABI;
 const erc20Abi = ERC20_ABI;
@@ -84,6 +85,8 @@ export function MandateBoard({ onFilled }) {
 }
 
 function MandateCard({ mandate: m, expanded, onToggle, contracts, publicClient, onFilled }) {
+  // Mandate expiry is block.timestamp-based; count down against chain time.
+  const chainNow = useChainNow(30);
   const [principal, setPrincipal] = useState("");
   const [termDays, setTermDays] = useState(String(Math.floor(m.minTermSeconds / DAY) || 1));
   const [depositPct, setDepositPct] = useState(String(m.minDepositBps / 100));
@@ -263,7 +266,7 @@ function MandateCard({ mandate: m, expanded, onToggle, contracts, publicClient, 
     }
   }
 
-  const expiresIn = m.expiry - Math.floor(Date.now() / 1000);
+  const expiresIn = m.expiry - chainNow;
 
   return (
     <div style={cardStyle}>

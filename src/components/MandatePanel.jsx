@@ -7,6 +7,7 @@ import { formatTokenAmount } from "../utils/format.js";
 import { useMandates, previewMandateApr } from "../hooks/useMandates.js";
 import { TIER_LABELS } from "../hooks/useVaultData.js";
 import { ActionButton } from "./ActionButton.jsx";
+import { Link } from "react-router-dom";
 
 const factoryAbi = VAULT_FACTORY_ABI;
 const erc20Abi = ERC20_ABI;
@@ -172,6 +173,19 @@ export function MandatePanel({ selectedAsset, selectedSymbol, decimals }) {
   const belowFloor =
     floorLongBps !== undefined && preview.minDepositBps < Number(floorLongBps);
 
+  // The tier's longest permitted loan. publishMandate refuses a longer
+  // maximum term, and the refusal used to surface only as a wallet gas error
+  // (found click-testing: a 30-day Standard mandate, where Standard allows 7).
+  const { data: tierMaxTerm } = useReadContract({
+    address: contracts.assetRegistry, abi: ASSET_REGISTRY_ABI,
+    functionName: "maxTermForTier",
+    args: [maxTier],
+  });
+  const tierMaxDays = tierMaxTerm !== undefined ? Number(tierMaxTerm) / DAY : undefined;
+  const termTooLong = tierMaxDays !== undefined && Number(maxTermDays) > tierMaxDays;
+
+  const [publishError, setPublishError] = useState(null);
+
   // Quote at the deposit a borrower would ACTUALLY have to post, not at the
   // mandate's advertised minimum.
   //
@@ -196,6 +210,37 @@ export function MandatePanel({ selectedAsset, selectedSymbol, decimals }) {
     const max = tryParse(maxPrincipal, decimals);
     const total = tryParse(totalCapacity, decimals);
     if (min === undefined || max === undefined || total === undefined) return;
+    setPublishError(null);
+    const terms = {
+      asset: selectedAsset,
+      minPrincipal: min,
+      maxPrincipal: max,
+      minTermSeconds: BigInt(Math.round(Number(minTermDays) * DAY)),
+      maxTermSeconds: BigInt(Math.round(Number(maxTermDays) * DAY)),
+      validForSeconds: BigInt(Math.round(Number(validHours) * 3600)),
+      maxTier,
+      permittedBorrower: "0x0000000000000000000000000000000000000000",
+      baseAprBps: BigInt(preview.baseAprBps),
+      termPremiumBpsPerDay: BigInt(preview.termPremiumBpsPerDay),
+      depositCreditBpsPerPoint: BigInt(preview.depositCreditBpsPerPoint),
+      minDepositBps: BigInt(preview.minDepositBps),
+      minAprBps: BigInt(preview.minAprBps),
+      totalCapacity: total,
+    };
+
+    // Dry-run first, so a refusal shows the contract's own reason rather than
+    // a wallet's failed gas estimate.
+    try {
+      await publicClient.simulateContract({
+        address: contracts.vaultFactory, abi: factoryAbi, functionName: "publishMandate",
+        args: [terms], account: address,
+      });
+    } catch (err) {
+      const raw = err?.shortMessage || err?.message || "";
+      setPublishError(raw.match(/reverted with the following reason:\s*(.+)/i)?.[1]?.trim() || raw);
+      return;
+    }
+
     setPendingAction("publish");
     try {
       const fees = await publicClient.estimateFeesPerGas();
@@ -203,22 +248,7 @@ export function MandatePanel({ selectedAsset, selectedSymbol, decimals }) {
         address: contracts.vaultFactory,
         abi: factoryAbi,
         functionName: "publishMandate",
-        args: [{
-          asset: selectedAsset,
-          minPrincipal: min,
-          maxPrincipal: max,
-          minTermSeconds: BigInt(Math.round(Number(minTermDays) * DAY)),
-          maxTermSeconds: BigInt(Math.round(Number(maxTermDays) * DAY)),
-          validForSeconds: BigInt(Math.round(Number(validHours) * 3600)),
-          maxTier,
-          permittedBorrower: "0x0000000000000000000000000000000000000000",
-          baseAprBps: BigInt(preview.baseAprBps),
-          termPremiumBpsPerDay: BigInt(preview.termPremiumBpsPerDay),
-          depositCreditBpsPerPoint: BigInt(preview.depositCreditBpsPerPoint),
-          minDepositBps: BigInt(preview.minDepositBps),
-          minAprBps: BigInt(preview.minAprBps),
-          totalCapacity: total,
-        }],
+        args: [terms],
         maxFeePerGas: fees.maxFeePerGas * 2n,
         maxPriorityFeePerGas: fees.maxPriorityFeePerGas,
       });
@@ -354,12 +384,7 @@ export function MandatePanel({ selectedAsset, selectedSymbol, decimals }) {
           terms — every borrower takes the longest term on the smallest deposit. Here
           both are priced, so you are indifferent across the whole surface.
         </p>
-        <p style={{
-          fontSize: 12,
-          color: belowFloor ? "var(--brick)" : "var(--parch-dim)",
-          margin: "0 0 10px",
-          lineHeight: 1.5,
-        }}>
+        <p style={{ fontSize: 12, color: "var(--parch-dim)", margin: "0 0 10px", lineHeight: 1.5 }}>
           Your minimum deposit sits on top of the protocol's own floor, which rises with
           the square root of term and with the risk ceiling you set above.
           {floorShortBps !== undefined && floorLongBps !== undefined && (
@@ -369,9 +394,12 @@ export function MandatePanel({ selectedAsset, selectedSymbol, decimals }) {
           )}
           {" "}Whichever is higher binds, so setting yours low does not expose you below
           the floor — it just means the floor is what applies.
+          {/* Information, not an error: the floor protects the lender either
+              way. It used to turn the whole paragraph red, which read as a
+              mistake in the form. */}
           {belowFloor && (
-            <> Yours is under the floor at the long end, so borrowers taking longer terms
-            will be asked for more than you advertised.</>
+            <span style={{ color: "var(--slate)" }}> Yours is under the floor at the long end, so borrowers
+            taking longer terms will be asked for more than you advertised.</span>
           )}
         </p>
 
@@ -412,12 +440,23 @@ export function MandatePanel({ selectedAsset, selectedSymbol, decimals }) {
 
         <ActionButton
           label="Publish mandate"
-          primary={!totalBelowMax}
-          disabled={totalBelowMax || wantedTotal === undefined}
-          disabledReason={totalBelowMax ? "Total capacity is below the maximum per loan." : "Enter a total capacity."}
+          primary={!totalBelowMax && !termTooLong}
+          disabled={totalBelowMax || termTooLong || wantedTotal === undefined}
+          disabledReason={
+            termTooLong
+              ? `${TIER_LABELS[maxTier]} loans can run at most ${tierMaxDays} day${tierMaxDays === 1 ? "" : "s"} — lower the longest term, or choose a safer risk ceiling.`
+              : totalBelowMax
+              ? "Total capacity is below the maximum per loan."
+              : "Enter a total capacity."
+          }
           loading={busy}
           onClick={publish}
         />
+        {publishError && (
+          <p style={{ fontSize: 12, color: "var(--brick)", marginTop: 10 }}>
+            The contract would refuse this mandate: {publishError}
+          </p>
+        )}
         {justPublished && (
           <p style={{ fontSize: 12, color: "var(--sage)", marginTop: 10 }}>
             Published — it is live below and borrowers can fill it now.
@@ -426,10 +465,18 @@ export function MandatePanel({ selectedAsset, selectedSymbol, decimals }) {
         {error && <p style={{ fontSize: 12, color: "var(--brick)", marginTop: 10 }}>{error.shortMessage || error.message}</p>}
       </div>
 
-      {mandates.length > 0 && (
+      {/* Live mandates only. Expired and cancelled ones are on the History
+          page, so this list stays the set that borrowers can actually fill. */}
+      {mandates.length > live.length && (
+        <p className="note" style={{ margin: "16px 0 0" }}>
+          {mandates.length - live.length} past mandate{mandates.length - live.length === 1 ? " is" : "s are"} in{" "}
+          <Link to="/history">loan history</Link>.
+        </p>
+      )}
+      {live.length > 0 && (
         <>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", margin: "20px 0 8px" }}>
-            <p style={{ ...sectionLabelStyle, margin: 0 }}>Your mandates</p>
+            <p style={{ ...sectionLabelStyle, margin: 0 }}>Your live mandates</p>
             {live.length > 1 && (
               <button onClick={cancelAll} disabled={busy} style={smallDangerButtonStyle}>
                 Cancel all ({live.length})
@@ -442,7 +489,7 @@ export function MandatePanel({ selectedAsset, selectedSymbol, decimals }) {
               mandates standing — and a book of mispriced offers is worse than
               an empty one. */}
           <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-            {mandates.map((m) => (
+            {live.map((m) => (
               <div key={m.id} style={{ ...cardStyle, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                 <div>
                   <p style={{ fontSize: 12, color: "var(--parch)", margin: "0 0 3px" }}>

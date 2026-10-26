@@ -1,6 +1,7 @@
 import { useChainId, useReadContracts } from "wagmi";
 import { KYC_REGISTRY_ABI, VAULT_FACTORY_ABI } from "../config/abis.js";
 import { getContractsForChain, isPlaceholder, CLAIM_LABELS } from "../config/contracts.js";
+import { useChainNow } from "./useChainNow.js";
 
 /**
  * Whether a wallet may borrow or lend RIGHT NOW, and why not if it may not.
@@ -22,6 +23,8 @@ import { getContractsForChain, isPlaceholder, CLAIM_LABELS } from "../config/con
 export function useEligibility(address, role) {
   const chainId = useChainId();
   const contracts = getContractsForChain(chainId);
+  // Expiry is enforced against block.timestamp, so judged against it here.
+  const now = useChainNow();
   const ready =
     Boolean(address) && !isPlaceholder(contracts.kycRegistry) && !isPlaceholder(contracts.vaultFactory);
 
@@ -60,7 +63,6 @@ export function useEligibility(address, role) {
 
   const claims = verification ? Number(verification.claims) : 0;
   const validUntil = verification ? Number(verification.validUntil) : 0;
-  const now = Math.floor(Date.now() / 1000);
   const expired = isVerified && validUntil > 0 && validUntil < now;
 
   const missingClaims =

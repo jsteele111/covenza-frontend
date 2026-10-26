@@ -32,10 +32,13 @@ export function shortAddress(address) {
   return `${address.slice(0, 6)}...${address.slice(-4)}`;
 }
 
-export function formatCountdown(deadlineSeconds) {
+// `nowSeconds` should be the CHAIN's time (useChainNow), which is what the
+// deadline is enforced against. The browser clock is only a fallback.
+export function formatCountdown(deadlineSeconds, nowSeconds) {
   if (!deadlineSeconds) return "—";
   const deadlineMs = Number(deadlineSeconds) * 1000;
-  const diffMs = deadlineMs - Date.now();
+  const nowMs = nowSeconds !== undefined ? nowSeconds * 1000 : Date.now();
+  const diffMs = deadlineMs - nowMs;
 
   if (diffMs <= 0) return "Expired";
 

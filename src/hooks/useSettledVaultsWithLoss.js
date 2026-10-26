@@ -68,11 +68,12 @@ export function useSettledVaultsWithLoss() {
       { address: addr, abi: vaultAbi, functionName: "settledFee" },
       { address: addr, abi: vaultAbi, functionName: "settledInsuranceDraw" },
       { address: addr, abi: vaultAbi, functionName: "asset" },
+      { address: addr, abi: vaultAbi, functionName: "deposit" },
     ]),
     query: { enabled: vaultAddresses.length > 0, refetchInterval: 15000 },
   });
 
-  const FIELDS_PER_VAULT = 10;
+  const FIELDS_PER_VAULT = 11;
   const lossyRaw = [];
   if (stateResults) {
     for (let i = 0; i < vaultAddresses.length; i++) {
@@ -92,6 +93,7 @@ export function useSettledVaultsWithLoss() {
         settledFee: stateResults[base + 7]?.result,
         settledInsuranceDraw: stateResults[base + 8]?.result,
         asset: stateResults[base + 9]?.result,
+        deposit: stateResults[base + 10]?.result ?? 0n,
       });
     }
   }

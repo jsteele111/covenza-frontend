@@ -7,6 +7,9 @@ import { TIER_LABELS } from "../hooks/useVaultData.js";
 import { MandatePanel } from "./MandatePanel.jsx";
 import { useLenderBook } from "../hooks/useLenderBook.js";
 import { useLatestVault } from "../hooks/useLatestVault.js";
+import { useVaultSelection } from "../hooks/useVaultSelection.js";
+import { UnclaimedBanner } from "./HistoryPage.jsx";
+import { Link } from "react-router-dom";
 import { useVaultData } from "../hooks/useVaultData.js";
 import { useEligibility } from "../hooks/useEligibility.js";
 import { recommendedDeposit } from "../utils/deposit.js";
@@ -268,7 +271,10 @@ export function LenderTab() {
   const isSuccess = receipt?.status === "success";
   const reverted = receipt?.status === "reverted";
 
-  const { latestVaultAddress, allVaults, refetch: refetchVaultList } = useLatestVault(address, "lender");
+  const { allVaults, refetch: refetchVaultList } = useLatestVault(address, "lender");
+  // Open loans only; closed ones are on the History page (26 October 2026).
+  const { vaults: openVaults, refetch: refetchOpen } = useVaultSelection(allVaults, { activeOnly: true });
+  const closedCount = (allVaults || []).length - openVaults.length;
 
   useEffect(() => {
     if (!isSuccess) return;
@@ -382,10 +388,39 @@ export function LenderTab() {
     }
   }
 
-  const otherVaults = (allVaults || []).filter((v) => v !== latestVaultAddress).reverse();
 
   return (
     <div>
+      <UnclaimedBanner address={address} />
+
+      {/* Open loans first: they have deadlines, and they are what a returning
+          lender most often came to look at. Closed loans are in History. */}
+      {openVaults.length > 0 && (
+        <div style={{ marginBottom: 24 }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 12, marginBottom: 10 }}>
+            <p style={{ fontSize: 14, fontWeight: 600, color: "var(--parch)", margin: 0 }}>
+              Open loans ({openVaults.length})
+            </p>
+            {closedCount > 0 && (
+              <Link to="/history" style={{ fontSize: 12.5 }}>
+                {closedCount} closed — loan history &rarr;
+              </Link>
+            )}
+          </div>
+          <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+            {[...openVaults].reverse().map((v) => (
+              <LenderVaultCard key={v.address} vaultAddress={v.address} onClosed={() => { refetchOpen(); refetchVaultList(); }} />
+            ))}
+          </div>
+        </div>
+      )}
+      {openVaults.length === 0 && closedCount > 0 && (
+        <p className="note" style={{ margin: "0 0 16px" }}>
+          No open loans. Your {closedCount} closed loan{closedCount === 1 ? " is" : "s are"} in{" "}
+          <Link to="/history">loan history</Link>.
+        </p>
+      )}
+
       {lenderBlocked && (
         <div style={{ marginBottom: 16 }}>
           <KycGate address={address} role="lender" onEligible={lenderElig.refetch} />
@@ -647,27 +682,9 @@ export function LenderTab() {
       </>
       )}
 
+      {/* The book summarises every loan, open and closed — totals, interest,
+          any shortfall — so it stays here; the individual closed loans do not. */}
       <LenderBook vaults={allVaults} />
-
-      {latestVaultAddress && (
-        <div style={{ marginTop: 20 }}>
-          <p style={{ fontSize: 12, color: "var(--parch-dim)", margin: "0 0 10px" }}>Your most recent vault</p>
-          <LenderVaultCard vaultAddress={latestVaultAddress} />
-        </div>
-      )}
-
-      {otherVaults.length > 0 && (
-        <div style={{ marginTop: 20 }}>
-          <p style={{ fontSize: 12, color: "var(--parch-dim)", margin: "0 0 10px" }}>
-            Earlier vaults ({otherVaults.length})
-          </p>
-          <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-            {otherVaults.map((addr) => (
-              <LenderVaultCard key={addr} vaultAddress={addr} />
-            ))}
-          </div>
-        </div>
-      )}
     </div>
   );
 }
@@ -754,13 +771,13 @@ function BookRow({ label, value, emphasis, alert }) {
   );
 }
 
-function LenderVaultCard({ vaultAddress }) {
+function LenderVaultCard({ vaultAddress, onClosed }) {
   const { vault, refetch } = useVaultData(vaultAddress);
   if (!vault) return null;
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
       <VaultStatement vault={vault} />
-      <VaultActions vault={vault} role="lender" onDone={refetch} />
+      <VaultActions vault={vault} role="lender" onDone={() => { refetch(); onClosed?.(); }} />
     </div>
   );
 }

@@ -1,5 +1,6 @@
 import { Seal } from "./Seal.jsx";
 import { formatTokenAmount, shortAddress, formatCountdown } from "../utils/format.js";
+import { useChainNow } from "../hooks/useChainNow.js";
 
 /**
  * One vault's terms, what it owes now, and — once settled — how it settled.
@@ -11,6 +12,7 @@ import { formatTokenAmount, shortAddress, formatCountdown } from "../utils/forma
  * assets may have covered (audit I-3).
  */
 export function VaultStatement({ vault }) {
+  const chainNow = useChainNow();
   if (!vault) {
     return (
       <div style={cardStyle}>
@@ -64,7 +66,7 @@ export function VaultStatement({ vault }) {
             <Row label="Lender receives if held to deadline" value={amount(lenderAtTerm)} />
           </>
         )}
-        <Row label="Deadline" value={vault.isSettled ? "Settled" : formatCountdown(vault.deadline)} />
+        <Row label="Deadline" value={vault.isSettled ? "Settled" : formatCountdown(vault.deadline, chainNow)} />
       </div>
 
       {vault.isSettled && vault.depositPaid && <Outcome vault={vault} amount={amount} />}

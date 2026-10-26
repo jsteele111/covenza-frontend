@@ -1,8 +1,9 @@
 import { useEffect, useState } from "react";
-import { useAccount, useBlock, usePublicClient } from "wagmi";
+import { useAccount, usePublicClient } from "wagmi";
+import { useChainNow } from "../hooks/useChainNow.js";
 import { VAULT_ABI } from "../config/abis.js";
 import { useVaultAction } from "../hooks/useVaultAction.js";
-import { useSwapPreflight } from "../hooks/useSwapPreflight.js";
+import { useSwapPreflight, explainTokenRefusal } from "../hooks/useSwapPreflight.js";
 import { useHeldClaims } from "../hooks/useVaultData.js";
 import { formatTokenAmount } from "../utils/format.js";
 import { ActionButton } from "./ActionButton.jsx";
@@ -29,8 +30,7 @@ import { ActionButton } from "./ActionButton.jsx";
  */
 export function VaultActions({ vault, role, onDone }) {
   const { address } = useAccount();
-  const { data: block } = useBlock({ watch: true });
-  const now = block ? Number(block.timestamp) : Math.floor(Date.now() / 1000);
+  const now = useChainNow(5);
 
   const settleAction = useVaultAction();
   const inKindAction = useVaultAction();
@@ -139,13 +139,20 @@ function SettleButton({ vault, enabled, label, reason, action, account }) {
   });
 
   const blocked = preflight.status === "would-revert";
+  // Not offered until the dry run has answered: an enabled button on the
+  // strength of a check that has not happened yet is the stale-check bug again.
+  const checking = enabled && preflight.status === "checking";
   return (
     <>
       <ActionButton
         label={label}
-        primary={enabled && !blocked}
-        disabled={!enabled || blocked}
-        disabledReason={reason || (blocked ? explainSettleRefusal(preflight.reason) : null)}
+        primary={enabled && !blocked && !checking}
+        disabled={!enabled || blocked || checking}
+        disabledReason={
+          reason ||
+          (checking ? "Checking with the contract…" : null) ||
+          (blocked ? explainSettleRefusal(preflight.reason, vault) : null)
+        }
         loading={action.isPending || action.isConfirming}
         onClick={() => action.call(vault.address, "settle")}
       />
@@ -169,16 +176,19 @@ function InKindPanel({ vault, now, isLender, inKindOpen, inKindOpenToAll, enable
     args: [],
   });
   const blocked = preflight.status === "would-revert";
+  const checking = enabled && preflight.status === "checking";
 
   const when = (ts) => new Date(ts * 1000).toLocaleString();
   const reason = !inKindOpen
     ? `Opens ${when(vault.inKindFrom)} (in ${formatSpan(vault.inKindFrom - now)}).`
     : !isLender && !inKindOpenToAll
     ? `The lender alone may use this until ${when(vault.inKindOpenToAnyoneFrom)}.`
+    : checking
+    ? "Checking with the contract…"
     : blocked
     ? (/everything sold/i.test(preflight.reason || "")
         ? "Every held asset can be sold right now — use Settle loan instead."
-        : preflight.reason)
+        : explainTokenRefusal(preflight.reason) || preflight.reason)
     : null;
 
   return (
@@ -193,8 +203,8 @@ function InKindPanel({ vault, now, isLender, inKindOpen, inKindOpenToAll, enable
       </p>
       <ActionButton
         label="Settle in kind"
-        primary={enabled && !blocked}
-        disabled={!enabled || blocked}
+        primary={enabled && !blocked && !checking}
+        disabled={!enabled || blocked || checking}
         disabledReason={reason}
         loading={action.isPending || action.isConfirming}
         onClick={() => action.call(vault.address, "settleInKind")}
@@ -283,7 +293,18 @@ function Claims({ vault, wallet, onDone }) {
 
 function TxError({ action }) {
   if (action.error) {
-    return <p style={errorStyle}>{action.error.shortMessage || action.error.message}</p>;
+    const raw = action.error.shortMessage || action.error.message || "";
+    // A claim of a still-frozen token is refused by the token itself; say so,
+    // and that nothing is lost by trying.
+    if (/\bSTF\b|Token is frozen|Token transfer failed/i.test(raw)) {
+      return (
+        <p style={errorStyle}>
+          The token is still refusing transfers (frozen by its issuer). Your claim is unchanged and can be
+          made once it moves again.
+        </p>
+      );
+    }
+    return <p style={errorStyle}>{raw}</p>;
   }
   if (action.reverted) {
     return <p style={errorStyle}>The transaction was mined but reverted — nothing changed.</p>;
@@ -292,7 +313,14 @@ function TxError({ action }) {
 }
 
 /** The contract's reasons, said in terms of what the reader can do. */
-function explainSettleRefusal(reason) {
+function explainSettleRefusal(reason, vault) {
+  const frozen = explainTokenRefusal(reason);
+  if (frozen) {
+    const opens = vault?.inKindFrom
+      ? ` If it stays that way, the loan can be settled in kind from ${new Date(vault.inKindFrom * 1000).toLocaleString()}.`
+      : "";
+    return frozen + opens;
+  }
   if (/Grace period: only lender or borrower/i.test(reason || "")) return "Only the lender or borrower may settle during grace.";
   if (/Chain recovering from an outage/i.test(reason || "")) return "The chain had an outage; keepers wait out the recovery period.";
   if (/Received less than minimum|Too little received/i.test(reason || "")) {
