@@ -186,9 +186,9 @@ function ProtocolConfigStrip({ config, isLoading }) {
 
   const items = [
     { label: "Total vaults ever", value: config.totalVaults },
-    { label: "TWAP window", value: config.twapWindow != null ? `${Number(config.twapWindow) / 60} min` : "—" },
+    { label: "TWAP window", value: config.twapWindow != null ? formatDuration(Number(config.twapWindow)) : "—" },
     { label: "TWAP tolerance", value: config.twapToleranceBps != null ? formatPercent(Number(config.twapToleranceBps) / 10000) : "—" },
-    { label: "Swap-back grace period", value: config.swapBackGracePeriod != null ? `${Number(config.swapBackGracePeriod) / 3600}h` : "—" },
+    { label: "Swap-back grace period", value: config.swapBackGracePeriod != null ? formatDuration(Number(config.swapBackGracePeriod)) : "—" },
     { label: "Keeper bounty rate", value: config.bountyRatePerHourBps != null ? `${formatPercent(Number(config.bountyRatePerHourBps) / 10000)}/hr` : "—" },
     { label: "Keeper bounty cap", value: config.bountyCapBps != null ? formatPercent(Number(config.bountyCapBps) / 10000) : "—" },
     { label: "Insurance draw cap (of principal)", value: config.drawCapBps != null ? formatPercent(Number(config.drawCapBps) / 10000) : "—" },
@@ -280,3 +280,16 @@ const cardStyle = {
   border: "1px solid var(--hairline)",
   padding: "18px 20px",
 };
+
+/**
+ * Seconds in the largest unit that reads cleanly: "90 s", "1.5 min", "2 h".
+ * The grace period used to be shown in hours only, so testnet's 90 seconds
+ * read as "0.025h" (found on the testnet click-through, 27 October 2026).
+ */
+function formatDuration(seconds) {
+  const round = (n) => Math.round(n * 10) / 10;
+  if (seconds < 60) return `${seconds} s`;
+  if (seconds < 3600) return `${round(seconds / 60)} min`;
+  if (seconds < 86400) return `${round(seconds / 3600)} h`;
+  return `${round(seconds / 86400)} d`;
+}

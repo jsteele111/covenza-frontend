@@ -9,10 +9,12 @@
 // deliberately NOT kept here. Pointing the new interface at the old contracts
 // would decode garbage rather than fail loudly.
 //
-// Robinhood testnet is filled in after the frozen stack is redeployed there
-// (scripts/deploy-robinhood-testnet.js in lending-poc), and the local Hardhat
-// node after a local deploy. Until then every address is PLACEHOLDER and the
-// app says "not deployed on this network" rather than showing empty data.
+// Robinhood testnet: the frozen stack, redeployed 26–27 October 2026 by
+// lending-poc's deploy-uniswap-testnet.js, deploy-robinhood-testnet.js (1-hour
+// timelock) and deploy-stock-token-testnet.js, checked with
+// verify-testnet-deploy.js. The local Hardhat node is filled in for
+// deploy-local.js. A network with PLACEHOLDER addresses says "not deployed on
+// this network" rather than showing empty data.
 // -----------------------------------------------------------------------
 
 const PLACEHOLDER = "0x0000000000000000000000000000000000000000";
@@ -37,31 +39,31 @@ const CONTRACTS_BY_CHAIN = {
   // failing loudly — useDeploymentHealth checks for code before anything else.
   // -------------------------------------------------------------------
   46630: {
-    kycRegistry:   PLACEHOLDER,
-    assetRegistry: PLACEHOLDER,
-    insurancePool: PLACEHOLDER,
-    vaultFactory:  PLACEHOLDER,
-    vaultLens:     PLACEHOLDER,
-    treasury:      PLACEHOLDER,
+    kycRegistry:   "0xE67Da97d9d9A56032Dc08c01F0AA0f12E6A0A641",
+    assetRegistry: "0x3910c7fa358212dF4A629d4F809cdAE643619926",
+    insurancePool: "0x0eeB323aeD8b830817A74BE4eBbdfc97940d4214",
+    vaultFactory:  "0xff2273b60b69DaB7d106027b4735ddeA2e421a4d",
+    vaultLens:     "0x92ebA00eC7d12A5fEF6b550e2017c2fCb6379aae",
+    treasury:      "0x2e6075b0B10c747357C2Bd58075af5e471f1f5F3",
     tokens: {
-      tUSDG: PLACEHOLDER,
-      tWETH: PLACEHOLDER,
+      tUSDG: "0x6ce0243a7790347C18805101947Bb10e7A4D427d",
+      tWETH: "0x5218C7c2Fde6E8Ae083c32D714F624c69fc383f6",
       // Standard tier, 72h grace. A tokenised equity trades 24/5, so a
       // deadline falling on a Friday evening has no market to settle into
       // until Monday.
-      tAAPL: PLACEHOLDER,
+      tAAPL: "0x5B25fD2570480067E1f1391f04673163D7B47B6A",
     },
 
     // Vaults are EIP-1167 clones of this implementation, which is deployed once
     // and never initialised. Recorded because a clone carries no code of its
     // own — point a contract verifier at the implementation, not at a vault.
-    vaultImplementation: PLACEHOLDER,
-    uniswapTwapLibrary:  PLACEHOLDER,
+    vaultImplementation: "0xea81E07A7D3b56C74a84b6B742F479115a9ba7B4",
+    uniswapTwapLibrary:  "0x9DBEEAfDcDE2E8851C4aB91dBDcabf6FE1D0a848",
     // Reference only — the app reads uniswapFactory and swapRouter from
     // AssetRegistry on-chain rather than trusting these.
     uniswap: {
-      factory: PLACEHOLDER,
-      router:  PLACEHOLDER,
+      factory: "0xCd5EEAd4bfF7460d4ef15d3B3bE35327505b0Be3",
+      router:  "0x4C400720218A2D2a76A925BBae5901A97e376A16",
     },
   },
 
